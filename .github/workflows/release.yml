@@ -44,12 +44,6 @@ jobs:
           tags: openatom-knowledge-backend:latest
           outputs: type=docker,dest=/tmp/backend-image.tar
 
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-docker-image
-          path: /tmp/backend-image.tar
-
       - name: Prepare deploy files
         run: |
           mkdir -p deploy-files
@@ -136,7 +130,23 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: backend-jar
+          path: artifacts/backend-jar
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-macOS-arm64
+          path: artifacts/desktop-mac-arm64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-Windows-x64
+          path: artifacts/desktop-win-x64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-Windows-arm64
+          path: artifacts/desktop-win-arm64
 
       - name: Collect release files
         run: |
