@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('openatom', {
   platform: process.platform,
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:get-version'),
+  },
   auth: {
     login: () => ipcRenderer.invoke('auth:login'),
     logout: () => ipcRenderer.invoke('auth:logout'),
@@ -19,6 +22,7 @@ contextBridge.exposeInMainWorld('openatom', {
   },
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
+    install: () => ipcRenderer.invoke('updater:install'),
     onStatus: (listener) => {
       const handler = (_event, payload) => listener(payload)
       ipcRenderer.on('updater:status', handler)

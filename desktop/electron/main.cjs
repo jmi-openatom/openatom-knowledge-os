@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, shell, Menu } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const crypto = require('node:crypto')
 const fs = require('node:fs')
@@ -30,6 +30,7 @@ function createPreviewWindow(fileId) {
     minWidth: 640,
     minHeight: 480,
     title: '文件预览',
+    autoHideMenuBar: true,
     backgroundColor: '#fafafa',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -256,6 +257,7 @@ function createWindow() {
     minHeight: 720,
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    autoHideMenuBar: true,
     backgroundColor: '#fafafa',
     icon: path.join(__dirname, '..', 'resources', 'icon.png'),
     webPreferences: {
@@ -265,6 +267,11 @@ function createWindow() {
       sandbox: true,
     },
   })
+
+  // Remove default menu bar (File/Edit/View/Window/Help) on Windows/Linux
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null)
+  }
 
   if (isDev) {
     mainWindow.loadURL('http://127.0.0.1:5173')
@@ -297,17 +304,31 @@ ipcMain.handle('auth:get-access-token', () => readSession()?.access_token || nul
 ipcMain.handle('auth:refresh', refreshSession)
 ipcMain.handle('updater:check', async () => {
   if (isDev) return { status: 'disabled-in-development' }
-  return autoUpdater.checkForUpdatesAndNotify()
+  return autoUpdater.checkForUpdates()
 })
+ipcMain.handle('updater:install', () => {
+  if (!isDev) autoUpdater.quitAndInstall()
+})
+ipcMain.handle('app:get-version', () => app.getVersion())
+
+autoUpdater.autoDownload = true
+autoUpdater.autoInstallOnAppQuit = true
 
 autoUpdater.on('checking-for-update', () => mainWindow?.webContents.send('updater:status', { status: 'checking' }))
 autoUpdater.on('update-available', (info) => mainWindow?.webContents.send('updater:status', { status: 'available', info }))
 autoUpdater.on('update-not-available', () => mainWindow?.webContents.send('updater:status', { status: 'current' }))
 autoUpdater.on('error', (error) => mainWindow?.webContents.send('updater:status', { status: 'error', message: error.message }))
+autoUpdater.on('download-progress', (progress) => mainWindow?.webContents.send('updater:status', {
+  status: 'downloading',
+  percent: Math.round(progress.percent),
+  transferred: progress.transferred,
+  total: progress.total,
+}))
+autoUpdater.on('update-downloaded', (info) => mainWindow?.webContents.send('updater:status', { status: 'downloaded', info }))
 
 app.whenReady().then(() => {
   createWindow()
-  if (!isDev) autoUpdater.checkForUpdatesAndNotify()
+  if (!isDev) autoUpdater.checkForUpdates()
 })
 
 app.on('window-all-closed', () => {

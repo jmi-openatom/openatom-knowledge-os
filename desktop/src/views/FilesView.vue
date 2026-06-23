@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { IconDownload, IconEye, IconFile, IconFilter, IconSearch, IconTrash, IconUpload } from '@tabler/icons-vue'
+import { IconDownload, IconEye, IconFile, IconFilter, IconSearch, IconTrash, IconUpload, IconX } from '@tabler/icons-vue'
 import { OaBadge, OaButton, OaEmpty, OaIconButton, OaInput, OaModal, OaTag, useToast } from '@openatom/ui'
 import PageHeader from '@/components/PageHeader.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
@@ -11,7 +11,10 @@ const store = useKnowledgeStore()
 const filePreviewer = useFilePreviewerStore()
 const keyword = ref('')
 const uploadOpen = ref(false)
-const selectedFile = ref<File | null>(null)
+const selectedFiles = ref<File[]>([])
+const isUploading = ref(false)
+const uploadProgress = ref<{ done: number; total: number; current: string }>({ done: 0, total: 0, current: '' })
+const isDragOver = ref(false)
 const { pushToast } = useToast()
 
 const filtered = computed(() => store.files.filter((file) =>
@@ -20,25 +23,70 @@ const filtered = computed(() => store.files.filter((file) =>
 
 onMounted(() => store.loadFiles())
 
-function pickFile(event: Event) {
-  selectedFile.value = (event.target as HTMLInputElement).files?.[0] || null
+function pickFiles(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (input.files) {
+    selectedFiles.value = [...selectedFiles.value, ...Array.from(input.files)]
+  }
+}
+
+function removeSelectedFile(index: number) {
+  selectedFiles.value.splice(index, 1)
+}
+
+function onDrop(event: DragEvent) {
+  isDragOver.value = false
+  if (event.dataTransfer?.files) {
+    const allowed = ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.pdf', '.md', '.txt']
+    const files = Array.from(event.dataTransfer.files).filter((f) => {
+      const ext = '.' + f.name.split('.').pop()?.toLowerCase()
+      return allowed.includes(ext)
+    })
+    selectedFiles.value = [...selectedFiles.value, ...files]
+  }
+}
+
+function onDragOver() {
+  isDragOver.value = true
+}
+
+function onDragLeave() {
+  isDragOver.value = false
 }
 
 async function upload() {
-  if (!selectedFile.value) return
-  const file = selectedFile.value
-  try {
-    const result = await store.uploadFile(file, ['手动上传'])
-    if (!result) {
-      pushToast({ title: '上传失败', description: '无法连接后端服务，请确认后端已启动', tone: 'danger' })
-      return
+  if (!selectedFiles.value.length || isUploading.value) return
+  isUploading.value = true
+  uploadProgress.value = { done: 0, total: selectedFiles.value.length, current: '' }
+  let successCount = 0
+  let failCount = 0
+
+  for (const file of selectedFiles.value) {
+    uploadProgress.value.current = file.name
+    try {
+      const result = await store.uploadFile(file, ['手动上传'])
+      if (result) {
+        successCount++
+      } else {
+        failCount++
+      }
+    } catch {
+      failCount++
     }
-    pushToast({ title: '上传成功', description: `${file.name} · 已解析并加入资料库`, tone: 'success' })
-    uploadOpen.value = false
-    selectedFile.value = null
-    await store.loadFiles()
-  } catch (error) {
-    pushToast({ title: '上传失败', description: error instanceof Error ? error.message : '请检查后端服务', tone: 'danger' })
+    uploadProgress.value.done++
+  }
+
+  isUploading.value = false
+  selectedFiles.value = []
+  uploadOpen.value = false
+  await store.loadFiles()
+
+  if (successCount && !failCount) {
+    pushToast({ title: `上传成功`, description: `${successCount} 个文件已解析并加入资料库`, tone: 'success' })
+  } else if (successCount && failCount) {
+    pushToast({ title: `上传完成`, description: `${successCount} 个成功，${failCount} 个失败`, tone: 'warning' })
+  } else {
+    pushToast({ title: '上传失败', description: '无法连接后端服务，请确认后端已启动', tone: 'danger' })
   }
 }
 
@@ -93,15 +141,38 @@ function formatSize(size: number) {
       </div>
     </div>
     <OaModal :open="uploadOpen" title="上传资料" description="上传后将自动解析文本、建立索引并进入 AI 知识库" @close="uploadOpen = false">
-      <label class="upload-zone">
+      <label
+        class="upload-zone"
+        :class="{ 'drag-over': isDragOver }"
+        @drop.prevent="onDrop"
+        @dragover.prevent="onDragOver"
+        @dragleave.prevent="onDragLeave"
+      >
         <IconUpload :size="28" />
-        <strong>{{ selectedFile?.name || '选择文件或拖放到这里' }}</strong>
-        <span>支持 Word、Excel、PPT、PDF、Markdown、TXT，单文件最大 100MB</span>
-        <input type="file" accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,.md,.txt" @change="pickFile">
+        <strong>{{ selectedFiles.length ? `${selectedFiles.length} 个文件已选择` : '选择文件或拖放到这里' }}</strong>
+        <span>支持 Word、Excel、PPT、PDF、Markdown、TXT，可多选，单文件最大 100MB</span>
+        <input type="file" accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,.md,.txt" multiple @change="pickFiles">
       </label>
+      <div v-if="selectedFiles.length" class="file-list">
+        <div v-for="(file, index) in selectedFiles" :key="index" class="file-list-item">
+          <div class="file-list-item__info">
+            <IconFile :size="16" />
+            <span>{{ file.name }}</span>
+            <small>{{ formatSize(file.size) }}</small>
+          </div>
+          <button v-if="!isUploading" class="file-list-item__remove" @click="removeSelectedFile(index)"><IconX :size="15" /></button>
+          <span v-else-if="uploadProgress.current === file.name" class="file-list-item__status">上传中…</span>
+          <span v-else-if="uploadProgress.done > index" class="file-list-item__status done">✓</span>
+        </div>
+      </div>
+      <div v-if="isUploading" class="upload-progress">
+        正在上传 {{ uploadProgress.done }}/{{ uploadProgress.total }}：{{ uploadProgress.current }}
+      </div>
       <template #footer>
-        <OaButton variant="outline" @click="uploadOpen = false">取消</OaButton>
-        <OaButton tone="primary" :disabled="!selectedFile" @click="upload">开始上传</OaButton>
+        <OaButton variant="outline" @click="uploadOpen = false" :disabled="isUploading">取消</OaButton>
+        <OaButton tone="primary" :disabled="!selectedFiles.length || isUploading" :loading="isUploading" @click="upload">
+          {{ isUploading ? '上传中…' : `上传 ${selectedFiles.length || ''}` }}
+        </OaButton>
       </template>
     </OaModal>
   </div>
@@ -121,8 +192,19 @@ function formatSize(size: number) {
 .file-name small { color: var(--oa-color-muted); font-size: 9px; }
 .tags, .row-actions { display: flex; gap: 5px; }
 .file-row time { font-family: var(--oa-font-mono); font-size: 9px; }
-.upload-zone { display: grid; min-height: 220px; padding: 28px; border: 1px dashed #b9c7d7; border-radius: 9px; color: var(--oa-color-muted); background: #fafcff; cursor: pointer; text-align: center; place-content: center; justify-items: center; }
+.upload-zone { display: grid; min-height: 160px; padding: 28px; border: 1px dashed #b9c7d7; border-radius: 9px; color: var(--oa-color-muted); background: #fafcff; cursor: pointer; text-align: center; place-content: center; justify-items: center; transition: border-color .15s, background .15s; }
+.upload-zone.drag-over { border-color: var(--oa-color-link, #087cf0); background: rgb(8 124 240 / 5%); }
 .upload-zone strong { margin-top: 12px; color: var(--oa-color-ink); }
 .upload-zone span { margin-top: 7px; font-size: 11px; }
 .upload-zone input { display: none; }
+.file-list { margin-top: 14px; max-height: 200px; overflow-y: auto; display: grid; gap: 6px; }
+.file-list-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--oa-color-hairline); border-radius: 7px; background: #fafafa; font-size: 12px; }
+.file-list-item__info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.file-list-item__info span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--oa-color-ink); }
+.file-list-item__info small { color: var(--oa-color-muted); font-size: 10px; flex: none; }
+.file-list-item__remove { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: 5px; color: var(--oa-color-muted); background: transparent; cursor: pointer; }
+.file-list-item__remove:hover { color: #c0392b; background: rgb(192 57 43 / 8%); }
+.file-list-item__status { font-size: 11px; color: var(--oa-color-muted); }
+.file-list-item__status.done { color: #2dbd5a; }
+.upload-progress { margin-top: 12px; padding: 8px 12px; border-radius: 6px; background: #edf5ff; color: #276db4; font-size: 11px; }
 </style>

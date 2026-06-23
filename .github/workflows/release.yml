@@ -154,6 +154,8 @@ jobs:
           find artifacts -name '*.dmg' -exec cp {} release-files/ \;
           find artifacts -name '*.exe' -exec cp {} release-files/ \;
           find artifacts -name '*.jar' -exec cp {} release-files/ \;
+          find artifacts -name '*.yml' -exec cp {} release-files/ \;
+          find artifacts -name '*.blockmap' -exec cp {} release-files/ \;
 
       - uses: softprops/action-gh-release@v2
         with:
