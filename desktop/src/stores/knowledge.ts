@@ -165,7 +165,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         if (e instanceof TypeError && e.message.includes('fetch')) {
-          error.value = '无法连接后端服务，请确认后端已启动（http://127.0.0.1:8080）'
+          error.value = '无法连接后端服务，请检查网络连接'
         } else {
           error.value = e instanceof Error ? e.message : 'AI 问答请求失败'
         }

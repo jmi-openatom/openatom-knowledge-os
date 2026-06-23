@@ -130,7 +130,7 @@ public class RagService {
         "stream", true,
         "messages", List.of(
             Map.of("role", "system", "content", SYSTEM_PROMPT),
-            Map.of("role", "user", "content", "问题：" + question + "\n\n资料：\n" + context)));
+            Map.of("role", "user", "content", "问题：" + stripImages(question) + "\n\n资料：\n" + context)));
     HttpRequest httpRequest = HttpRequest.newBuilder()
         .uri(URI.create(baseUrl.replaceAll("/+$", "") + "/chat/completions"))
         .timeout(Duration.ofSeconds(120))
@@ -146,6 +146,7 @@ public class RagService {
     }
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
       String line;
+      StringBuilder accumulated = new StringBuilder();
       while ((line = reader.readLine()) != null) {
         if (line.startsWith("data: ")) {
           String data = line.substring(6).trim();
@@ -154,6 +155,11 @@ public class RagService {
             JsonNode node = objectMapper.readTree(data);
             String content = node.path("choices").path(0).path("delta").path("content").asText("");
             if (!content.isEmpty()) {
+              accumulated.append(content);
+              if (looksLikeLlmError(accumulated.toString())) {
+                emitter.send(SseEmitter.event().name("error").data("AI 服务暂不支持图片输入，请去掉图片后重试"));
+                return;
+              }
               emitter.send(SseEmitter.event().name("token").data(content));
             }
           } catch (Exception ignored) {}
@@ -364,10 +370,10 @@ public class RagService {
           "temperature", 0.2,
           "messages", List.of(
               Map.of("role", "system", "content", SYSTEM_PROMPT),
-              Map.of("role", "user", "content", "问题：" + question + "\n\n资料：\n" + context)));
-      HttpRequest httpRequest = HttpRequest.newBuilder()
-          .uri(URI.create(baseUrl.replaceAll("/+$", "") + "/chat/completions"))
-          .timeout(Duration.ofSeconds(60))
+              Map.of("role", "user", "content", "问题：" + stripImages(question) + "\n\n资料：\n" + context)));
+    HttpRequest httpRequest = HttpRequest.newBuilder()
+        .uri(URI.create(baseUrl.replaceAll("/+$", "") + "/chat/completions"))
+        .timeout(Duration.ofSeconds(60))
           .header("Authorization", "Bearer " + apiKey)
           .header("Content-Type", "application/json")
           .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))

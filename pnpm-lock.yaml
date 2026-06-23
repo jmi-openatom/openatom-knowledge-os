@@ -28,6 +28,9 @@ importers:
       axios:
         specifier: ^1.10.0
         version: 1.18.0
+      electron-updater:
+        specifier: ^6.6.2
+        version: 6.8.9
       highlight.js:
         specifier: ^11.11.1
         version: 11.11.1
@@ -65,9 +68,6 @@ importers:
       electron-builder:
         specifier: ^26.0.12
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
-      electron-updater:
-        specifier: ^6.6.2
-        version: 6.8.9
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

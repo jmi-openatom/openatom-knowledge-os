@@ -42,8 +42,8 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 # 5. 等待后端健康检查
 echo "→ 等待后端启动..."
 for i in $(seq 1 30); do
-  if curl -sf http://127.0.0.1:8080/actuator/health > /dev/null 2>&1; then
-    echo "✓ 后端已就绪: http://127.0.0.1:8080"
+  if curl -sf http://127.0.0.1:10001/actuator/health > /dev/null 2>&1; then
+    echo "✓ 后端已就绪: http://127.0.0.1:10001"
     exit 0
   fi
   sleep 3
