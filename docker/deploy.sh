@@ -15,11 +15,16 @@ echo "=== OpenAtom Knowledge OS 部署 ==="
 # 1. 创建部署目录
 mkdir -p "$DEPLOY_DIR"
 
-# 2. 检查 .env 文件
+# 2. 检查 .env 文件，首次部署自动从 .env.example 创建
 if [ ! -f "$ENV_FILE" ]; then
-  echo "⚠ 未找到 ${ENV_FILE}，请先从 GitHub Actions 下载或手动创建。"
-  echo "  可参考 docker/.env.example"
-  exit 1
+  if [ -f "${DEPLOY_DIR}/.env.example" ]; then
+    echo "→ 首次部署，从 .env.example 创建 .env"
+    cp "${DEPLOY_DIR}/.env.example" "$ENV_FILE"
+    echo "⚠ 请稍后编辑 ${ENV_FILE} 修改密码等敏感配置"
+  else
+    echo "⚠ 未找到 ${ENV_FILE} 且无 .env.example 模板，请手动创建。"
+    exit 1
+  fi
 fi
 
 # 3. 加载 Docker 镜像（CI 会通过 SCP 上传 backend-image.tar）
