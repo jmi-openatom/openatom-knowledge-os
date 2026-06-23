@@ -2,10 +2,12 @@ package cn.jmi.openatom.knowledge.config;
 
 import cn.jmi.openatom.knowledge.security.OidcBearerTokenFilter;
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -33,6 +35,14 @@ public class SecurityConfig {
             .requestMatchers("/actuator/health", "/api/public/**", "/error").permitAll()
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
             .anyRequest().authenticated())
+        .exceptionHandling(exceptions -> exceptions
+            .authenticationEntryPoint((request, response, authException) -> {
+              response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+              response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+              response.setCharacterEncoding("UTF-8");
+              response.getWriter().write(
+                  "{\"status\":401,\"error\":\"Unauthorized\",\"message\":\"请先登录\"}");
+            }))
         .addFilterBefore(bearerTokenFilter, UsernamePasswordAuthenticationFilter.class)
         .build();
   }
