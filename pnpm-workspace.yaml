@@ -2,11 +2,4 @@ packages:
   - packages/*
   - desktop
 
-onlyBuiltDependencies:
-  - electron
-  - electron-winstaller
-  - esbuild
-  - "@vue-office/docx"
-  - "@vue-office/excel"
-  - "@vue-office/pptx"
-  - vue-demi
+dangerouslyAllowAllBuilds: true
