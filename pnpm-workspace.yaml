@@ -1,0 +1,20 @@
+packages:
+  - packages/*
+  - desktop
+
+allowBuilds:
+  '@vue-office/docx': set this to true or false
+  '@vue-office/excel': set this to true or false
+  '@vue-office/pptx': set this to true or false
+  electron-winstaller: set this to true or false
+  esbuild: set this to true or false
+  vue-demi: set this to true or false
+
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+  - esbuild
+  - "@vue-office/docx"
+  - "@vue-office/excel"
+  - "@vue-office/pptx"
+  - vue-demi

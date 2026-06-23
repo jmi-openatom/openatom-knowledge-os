@@ -1,0 +1,17 @@
+.DS_Store
+.idea/
+.vscode/
+node_modules/
+.pnpm-store/
+.npm-cache/
+dist/
+release/
+target/
+*.log
+.env
+.env.local
+data/
+uploads/
+desktop/.vite/
+desktop/out/
+backend/storage/

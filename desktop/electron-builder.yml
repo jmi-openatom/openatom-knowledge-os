@@ -1,0 +1,43 @@
+appId: cn.jmi.openatom.knowledge
+productName: OpenAtom Knowledge OS
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**
+  - electron/**
+  - resources/icon.png
+  - package.json
+icon: resources/icon
+mac:
+  category: public.app-category.productivity
+  icon: resources/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: OpenAtom Knowledge OS
+linux:
+  category: Office
+  target:
+    - AppImage
+publish:
+  provider: github
+protocols:
+  - name: OpenAtom Knowledge OAuth
+    schemes:
+      - openatom-knowledge

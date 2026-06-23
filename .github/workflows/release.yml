@@ -1,0 +1,151 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ─────────────────────────────────────────────
+  # 1. Backend: build JAR + Docker image + deploy
+  # ─────────────────────────────────────────────
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build JAR
+        run: ./mvnw clean package -DskipTests
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/*.jar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          tags: openatom-knowledge-backend:latest
+          outputs: type=docker,dest=/tmp/backend-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-docker-image
+          path: /tmp/backend-image.tar
+
+      - name: Prepare deploy files
+        run: |
+          mkdir -p deploy-files
+          cp docker/docker-compose.prod.yml deploy-files/
+          cp docker/.env.example deploy-files/
+          cp docker/deploy.sh deploy-files/
+          cp /tmp/backend-image.tar deploy-files/
+
+      - name: Upload files to server via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ vars.DEPLOY_PORT || '22' }}
+          source: "deploy-files/*"
+          target: "~/openatom-deploy"
+          strip_components: 1
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ vars.DEPLOY_PORT || '22' }}
+          script: |
+            cd ~/openatom-deploy
+            chmod +x deploy.sh
+            bash deploy.sh
+
+  # ─────────────────────────────────────────────
+  # 2. Desktop: Electron multi-arch build
+  # ─────────────────────────────────────────────
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+          - os: windows-latest
+            arch: x64
+          - os: windows-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.5.3"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build UI library
+        run: pnpm --filter @openatom/ui build
+
+      - name: Build and package Electron app
+        working-directory: desktop
+        run: pnpm dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}-${{ matrix.arch }}
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.exe
+            desktop/release/*.yml
+            desktop/release/*.blockmap
+
+  # ─────────────────────────────────────────────
+  # 3. Release: collect artifacts and publish
+  # ─────────────────────────────────────────────
+  release:
+    needs: [backend, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+          find artifacts -name '*.dmg' -exec cp {} release-files/ \;
+          find artifacts -name '*.exe' -exec cp {} release-files/ \;
+          find artifacts -name '*.jar' -exec cp {} release-files/ \;
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/**
+          generate_release_notes: true
