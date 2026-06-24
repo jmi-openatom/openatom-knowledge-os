@@ -105,6 +105,7 @@ jobs:
 
       - name: Set version from tag
         working-directory: desktop
+        shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "Setting desktop version to $VERSION"
