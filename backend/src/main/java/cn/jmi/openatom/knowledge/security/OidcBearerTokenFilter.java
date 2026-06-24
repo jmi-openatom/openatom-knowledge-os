@@ -60,7 +60,7 @@ public class OidcBearerTokenFilter extends OncePerRequestFilter {
       // OAuth server wraps claims inside a "data" field
       Map<String, Object> claims = result;
       if (result.containsKey("data") && result.get("data") instanceof Map<?, ?> dataMap) {
-        claims = objectMapper.convertValue(dataMap, new org.springframework.core.ParameterizedTypeReference<>() {});
+        claims = objectMapper.convertValue(dataMap, new TypeReference<Map<String, Object>>() {});
       }
       log.info("OIDC introspection claims: {}", objectMapper.writeValueAsString(claims));
       setAuthentication(toUser(claims));
