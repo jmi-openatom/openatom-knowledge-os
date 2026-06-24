@@ -17,6 +17,9 @@ mac:
     - target: dmg
       arch:
         - arm64
+    - target: zip
+      arch:
+        - arm64
 win:
   icon: resources/icon.ico
   target:

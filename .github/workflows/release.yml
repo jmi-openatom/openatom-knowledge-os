@@ -125,6 +125,7 @@ jobs:
           name: desktop-${{ runner.os }}-${{ matrix.arch }}
           path: |
             desktop/release/*.dmg
+            desktop/release/*.zip
             desktop/release/*.exe
             desktop/release/*.yml
             desktop/release/*.blockmap
@@ -160,6 +161,7 @@ jobs:
         run: |
           mkdir -p release-files
           find artifacts -name '*.dmg' -exec cp {} release-files/ \;
+          find artifacts -name '*.zip' -exec cp {} release-files/ \;
           find artifacts -name '*.exe' -exec cp {} release-files/ \;
           find artifacts -name '*.jar' -exec cp {} release-files/ \;
           find artifacts -name '*.yml' -exec cp {} release-files/ \;
