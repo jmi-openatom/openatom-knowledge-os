@@ -96,6 +96,10 @@ const lastAnswer = computed(() => {
   return hist.length > 0 ? hist[hist.length - 1] : null
 })
 
+function triggerFileInput() {
+  fileInput.value?.click()
+}
+
 async function handleFileSelect(event: Event) {
   const input = event.target as HTMLInputElement
   const files = input.files
@@ -270,7 +274,7 @@ function copyAnswer(text: string) {
         />
         <div class="composer__actions">
           <input ref="fileInput" type="file" multiple style="display:none" @change="handleFileSelect">
-          <OaIconButton label="附加文件" variant="outline" @click="$refs.fileInput?.click()"><IconPaperclip :size="18" /></OaIconButton>
+          <OaIconButton label="附加文件" variant="outline" @click="triggerFileInput"><IconPaperclip :size="18" /></OaIconButton>
           <span>Enter 发送 · Shift + Enter 换行</span>
           <OaButton v-if="knowledge.streaming" tone="danger" @click="knowledge.cancelStream()">
             <template #prefix><IconSquare :size="17" /></template>
