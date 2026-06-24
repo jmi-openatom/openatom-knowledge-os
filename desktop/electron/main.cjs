@@ -101,7 +101,9 @@ async function exchangeToken(params) {
     const body = await response.text()
     throw new Error(`OAuth 令牌请求失败（${response.status}）：${body || '未知错误'}`)
   }
-  return response.json()
+  const json = await response.json()
+  // OAuth server wraps response in a "data" field
+  return json.data || json
 }
 
 async function fetchUser(accessToken) {
@@ -109,7 +111,9 @@ async function fetchUser(accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) throw new Error('OAuth 用户信息同步失败')
-  return response.json()
+  const json = await response.json()
+  // OAuth server wraps response in a "data" field
+  return json.data || json
 }
 
 async function startPkceLogin() {
@@ -158,6 +162,8 @@ async function startPkceLogin() {
           code_verifier: codeVerifier,
         })
         const user = tokens.user || await fetchUser(tokens.access_token)
+        console.log('[OAuth] Token response keys:', Object.keys(tokens))
+        console.log('[OAuth] User info from OAuth:', JSON.stringify(user, null, 2))
         const session = {
           ...tokens,
           user,

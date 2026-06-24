@@ -57,7 +57,13 @@ public class OidcBearerTokenFilter extends OncePerRequestFilter {
           .retrieve()
           .body(new org.springframework.core.ParameterizedTypeReference<>() {});
       if (result == null || !Boolean.TRUE.equals(result.get("active"))) return false;
-      setAuthentication(toUser(result));
+      // OAuth server wraps claims inside a "data" field
+      Map<String, Object> claims = result;
+      if (result.containsKey("data") && result.get("data") instanceof Map<?, ?> dataMap) {
+        claims = objectMapper.convertValue(dataMap, new org.springframework.core.ParameterizedTypeReference<>() {});
+      }
+      log.info("OIDC introspection claims: {}", objectMapper.writeValueAsString(claims));
+      setAuthentication(toUser(claims));
       return true;
     } catch (Exception exception) {
       log.warn("OIDC token introspection failed: {}", exception.getMessage());
@@ -66,10 +72,13 @@ public class OidcBearerTokenFilter extends OncePerRequestFilter {
   }
 
   private CurrentUser toUser(Map<String, Object> claims) {
+    log.info("OIDC claims keys: {}", claims.keySet());
     List<String> roles = strings(claims.get("roles"));
     if (roles.isEmpty()) roles = strings(claims.get("role"));
     if (roles.isEmpty()) roles = strings(claims.get("authorities"));
-    String role = mapRole(roles);
+    List<String> permissions = strings(claims.get("permissions"));
+    String role = mapRole(roles, permissions);
+    log.info("Mapped roles [{}] permissions [{}] to role [{}]", roles, permissions, role);
     return new CurrentUser(
         String.valueOf(claims.getOrDefault("sub", "unknown")),
         String.valueOf(claims.getOrDefault("name", claims.getOrDefault("username", "OpenAtom 用户"))),
@@ -79,13 +88,33 @@ public class OidcBearerTokenFilter extends OncePerRequestFilter {
         permissionsForRole(role));
   }
 
-  private String mapRole(List<String> roles) {
-    if (roles.contains("admin") || roles.contains("super_admin")) return "admin";
-    if (roles.stream().anyMatch(item -> item.equals("leader")
-        || item.equals("operations_lead")
-        || item.equals("department_head")
-        || item.equals("club_admin"))) return "leader";
-    if (roles.contains("guest")) return "guest";
+  private String mapRole(List<String> roles, List<String> permissions) {
+    // Check roles first
+    boolean isAdmin = roles.stream().anyMatch(r -> {
+      String lower = r.toLowerCase();
+      return lower.equals("admin") || lower.equals("super_admin")
+          || lower.equals("administrator") || lower.equals("root")
+          || lower.contains("社长") || lower.equals("president")
+          || lower.equals("club_admin") || lower.equals("system_admin");
+    });
+    // If not admin by role, check permissions for admin-level access
+    if (!isAdmin && !permissions.isEmpty()) {
+      isAdmin = permissions.stream().anyMatch(p -> {
+        String lower = p.toLowerCase();
+        return lower.contains("admin") || lower.contains("manage")
+            || lower.contains("delete") || lower.contains("system");
+      });
+    }
+    if (isAdmin) return "admin";
+    boolean isLeader = roles.stream().anyMatch(r -> {
+      String lower = r.toLowerCase();
+      return lower.equals("leader") || lower.equals("operations_lead")
+          || lower.equals("department_head") || lower.equals("manager")
+          || lower.contains("部长") || lower.contains("负责人")
+          || lower.equals("vice_president") || lower.contains("副社长");
+    });
+    if (isLeader) return "leader";
+    if (roles.stream().anyMatch(r -> r.equalsIgnoreCase("guest") || r.contains("访客"))) return "guest";
     return "member";
   }
 

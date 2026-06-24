@@ -65,9 +65,21 @@ export const useAuthStore = defineStore('auth', () => {
 
   function normalizeUser(input: OpenAtomUser): KnowledgeUser {
     const roles = input.roles || (input.role ? [input.role] : [])
-    const role: KnowledgeUser['role'] = roles.includes('admin')
+    const permissions = input.permissions || []
+    // Check roles first, then fall back to permissions for admin detection
+    const hasAdminRole = roles.some((r) => {
+      const lower = r.toLowerCase()
+      return lower === 'admin' || lower === 'super_admin' || lower === 'administrator'
+        || lower.includes('社长') || lower === 'president' || lower === 'club_admin'
+    })
+    const hasAdminPermission = !hasAdminRole && permissions.some((p) => {
+      const lower = p.toLowerCase()
+      return lower.includes('admin') || lower.includes('manage')
+        || lower.includes('delete') || lower.includes('system')
+    })
+    const role: KnowledgeUser['role'] = (hasAdminRole || hasAdminPermission)
       ? 'admin'
-      : roles.some((item) => ['leader', 'operations_lead'].includes(item))
+      : roles.some((item) => ['leader', 'operations_lead', 'department_head'].includes(item.toLowerCase()))
         ? 'leader'
         : roles.includes('guest')
           ? 'guest'
