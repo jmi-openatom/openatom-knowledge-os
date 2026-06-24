@@ -67,6 +67,8 @@ public class OidcBearerTokenFilter extends OncePerRequestFilter {
 
   private CurrentUser toUser(Map<String, Object> claims) {
     List<String> roles = strings(claims.get("roles"));
+    if (roles.isEmpty()) roles = strings(claims.get("role"));
+    if (roles.isEmpty()) roles = strings(claims.get("authorities"));
     String role = mapRole(roles);
     return new CurrentUser(
         String.valueOf(claims.getOrDefault("sub", "unknown")),

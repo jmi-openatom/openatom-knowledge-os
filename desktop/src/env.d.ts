@@ -6,6 +6,7 @@ interface OpenAtomUser {
   name: string
   email?: string
   avatar?: string
+  role?: string
   roles?: string[]
   permissions?: string[]
 }

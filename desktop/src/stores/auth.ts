@@ -64,7 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function normalizeUser(input: OpenAtomUser): KnowledgeUser {
-    const roles = input.roles || []
+    const roles = input.roles || (input.role ? [input.role] : [])
     const role: KnowledgeUser['role'] = roles.includes('admin')
       ? 'admin'
       : roles.some((item) => ['leader', 'operations_lead'].includes(item))

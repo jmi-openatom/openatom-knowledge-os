@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { IconChevronDown, IconExternalLink, IconEye, IconFileDescription, IconFolder, IconRefresh } from '@tabler/icons-vue'
+import { IconChevronDown, IconExternalLink, IconEye, IconFileDescription, IconRefresh } from '@tabler/icons-vue'
 import { OaBadge, OaButton, OaIconButton, OaPanel } from '@openatom/ui'
 import { useFilePreviewerStore } from '@/stores/filePreviewer'
 import type { SourceReference } from '@/types'
 
 const props = defineProps<{
   sources: SourceReference[]
-  scope: string
 }>()
-
-defineEmits<{ changeScope: [] }>()
 
 const filePreviewer = useFilePreviewerStore()
 const selectedSourceIndex = ref(0)
@@ -51,26 +48,12 @@ function formatTime(time?: string) {
   return time.replace('T', ' ').substring(0, 16)
 }
 
-const scopeDescriptions: Record<string, string> = {
-  '全部资料': '全部社团资料，包括活动策划、技术资料、项目文档和会议记录。',
-  '活动策划': '与活动策划、执行、宣传、复盘相关的文档、模板、案例与资料。',
-  '技术资料': '技术分享、开发规范、环境搭建指南和代码评审约定。',
-  '项目文档': '项目立项、执行、结题归档相关文档和模板。',
-  '会议记录': '社团例会、专项会议记录和决议事项。',
-}
+
 </script>
 
 <template>
   <aside class="source-inspector">
-    <OaPanel padding="md" title="知识范围">
-      <template #actions><OaButton size="sm" variant="ghost" tone="primary" @click="$emit('changeScope')">修改</OaButton></template>
-      <div class="scope-row">
-        <span class="scope-icon"><IconFolder :size="18" /></span>
-        <div><strong>{{ scope }}</strong><p>包含 {{ sources.length || 128 }} 个资料 · 最近更新 2 天前</p></div>
-      </div>
-      <p class="scope-description">{{ scopeDescriptions[scope] || scopeDescriptions['全部资料'] }}</p>
-      <button class="text-link" type="button">展开 <IconChevronDown :size="14" /></button>
-    </OaPanel>
+
 
     <OaPanel padding="md" :title="`检索到的内容`" :description="`${sources.length} 个高相关片段`">
       <template #actions><OaBadge>{{ sources.length }}</OaBadge></template>
@@ -127,12 +110,11 @@ const scopeDescriptions: Record<string, string> = {
 
 <style scoped>
 .source-inspector { display: flex; flex: 0 0 306px; flex-direction: column; gap: 12px; height: 100%; padding: 18px 14px; overflow-y: auto; border-left: 1px solid var(--oa-color-hairline); background: #fcfcfc; }
-.scope-row, .file-summary { display: flex; align-items: flex-start; gap: 11px; }
-.scope-icon, .file-summary__icon { display: grid; width: 34px; height: 34px; flex: none; border-radius: 8px; color: #7357d9; background: #f0edff; place-items: center; }
-.scope-row strong, .file-summary strong { font-size: 12px; }
-.scope-row p, .file-summary p { margin: 4px 0 0; color: var(--oa-color-muted); font-size: 10px; line-height: 1.4; }
-.scope-description { margin: 13px 0 8px; color: var(--oa-color-body); font-size: 11px; line-height: 1.6; }
-.text-link, .all-passages { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; color: var(--oa-color-link); background: none; cursor: pointer; font-size: 11px; }
+.file-summary { display: flex; align-items: flex-start; gap: 11px; }
+.file-summary__icon { display: grid; width: 34px; height: 34px; flex: none; border-radius: 8px; color: #7357d9; background: #f0edff; place-items: center; }
+.file-summary strong { font-size: 12px; }
+.file-summary p { margin: 4px 0 0; color: var(--oa-color-muted); font-size: 10px; line-height: 1.4; }
+.all-passages { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; color: var(--oa-color-link); background: none; cursor: pointer; font-size: 11px; }
 .source-list { display: grid; gap: 7px; }
 .source-card { display: block; width: 100%; padding: 10px; border: 1px solid var(--oa-color-hairline); border-radius: 7px; color: var(--oa-color-ink); background: #fff; cursor: pointer; text-align: left; transition: border-color .15s, box-shadow .15s; }
 .source-card:hover { border-color: #bdd9f8; box-shadow: var(--oa-shadow-1); }

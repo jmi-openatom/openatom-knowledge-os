@@ -12,7 +12,7 @@ import {
   IconThumbDown,
   IconThumbUp,
 } from '@tabler/icons-vue'
-import { OaButton, OaIconButton, OaModal, OaSelect, OaSpinner, OaTag, useToast } from '@openatom/ui'
+import { OaButton, OaIconButton, OaSpinner, OaTag, useToast } from '@openatom/ui'
 import ConversationSidebar from '@/components/ConversationSidebar.vue'
 import SourceInspector from '@/components/SourceInspector.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -26,9 +26,9 @@ const knowledge = useKnowledgeStore()
 const filePreviewer = useFilePreviewerStore()
 const { pushToast } = useToast()
 const question = ref('')
-const scope = ref('活动策划')
-const scopeModal = ref(false)
+const scope = ref('全部资料')
 const savingToWiki = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
 const chatScroll = ref<HTMLElement | null>(null)
 const quickPrompts = [
   '活动策划流程有哪些关键步骤？',
@@ -95,6 +95,25 @@ const lastAnswer = computed(() => {
   const hist = conversationHistory.value
   return hist.length > 0 ? hist[hist.length - 1] : null
 })
+
+async function handleFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+
+  for (const file of Array.from(files)) {
+    try {
+      pushToast({ title: `正在上传 ${file.name}…`, tone: 'neutral' })
+      await knowledge.uploadFile(file, ['上传附件'])
+      pushToast({ title: `${file.name} 已上传并索引`, tone: 'success' })
+    } catch (error) {
+      console.error('Upload failed:', error)
+      pushToast({ title: `${file.name} 上传失败`, tone: 'danger' })
+    }
+  }
+  // Reset input so the same file can be selected again
+  input.value = ''
+}
 
 async function send() {
   const value = question.value.trim()
@@ -243,10 +262,6 @@ function copyAnswer(text: string) {
       </div>
 
       <div class="composer">
-        <div class="composer__scope">
-          <button type="button" @click="scopeModal = true">知识范围　<strong>{{ scope }}</strong></button>
-          <OaTag>全部资料</OaTag>
-        </div>
         <textarea
           v-model="question"
           rows="2"
@@ -254,7 +269,8 @@ function copyAnswer(text: string) {
           @keydown.enter.exact.prevent="send"
         />
         <div class="composer__actions">
-          <OaIconButton label="附加文件" variant="outline"><IconPaperclip :size="18" /></OaIconButton>
+          <input ref="fileInput" type="file" multiple style="display:none" @change="handleFileSelect">
+          <OaIconButton label="附加文件" variant="outline" @click="$refs.fileInput?.click()"><IconPaperclip :size="18" /></OaIconButton>
           <span>Enter 发送 · Shift + Enter 换行</span>
           <OaButton v-if="knowledge.streaming" tone="danger" @click="knowledge.cancelStream()">
             <template #prefix><IconSquare :size="17" /></template>
@@ -268,25 +284,7 @@ function copyAnswer(text: string) {
       </div>
     </section>
 
-    <SourceInspector :sources="currentSources" :scope="scope" @change-scope="scopeModal = true" />
-
-    <OaModal :open="scopeModal" title="选择知识范围" description="限定 AI 本次检索的资料空间" @close="scopeModal = false">
-      <OaSelect
-        v-model="scope"
-        label="资料空间"
-        :options="[
-          { label: '全部资料', value: '全部资料' },
-          { label: '活动策划', value: '活动策划' },
-          { label: '技术资料', value: '技术资料' },
-          { label: '项目文档', value: '项目文档' },
-          { label: '会议记录', value: '会议记录' }
-        ]"
-      />
-      <template #footer>
-        <OaButton variant="outline" @click="scopeModal = false">取消</OaButton>
-        <OaButton tone="primary" @click="scopeModal = false">应用范围</OaButton>
-      </template>
-    </OaModal>
+    <SourceInspector :sources="currentSources" />
   </div>
 </template>
 
