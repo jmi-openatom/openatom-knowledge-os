@@ -174,3 +174,5 @@ pnpm build:desktop
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+macOS 暂未配置 Apple Developer 签名证书，因此不启用自动更新；macOS 用户通过 Release 下载 DMG 手动覆盖安装。

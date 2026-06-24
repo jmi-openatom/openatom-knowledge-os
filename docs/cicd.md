@@ -32,7 +32,7 @@
 ### Release（推送 `v*` 标签触发）
 - `release.yml`：
   1. **后端**：构建 JAR → 构建 Docker 镜像 → SCP 上传到服务器 → SSH 远程部署
-  2. **桌面端**：macOS arm64 DMG + Windows x64/arm64 NSIS 安装包
+  2. **桌面端**：未签名 macOS arm64 DMG + Windows x64/arm64 NSIS 安装包
   3. **发布**：收集所有产物发布到 GitHub Release
 
 ## 触发发布
@@ -56,4 +56,4 @@ git push origin v1.0.0
 | Windows | x64 | NSIS | `OpenAtom Knowledge OS-1.0.0-win-x64.exe` |
 | Windows | arm64 | NSIS | `OpenAtom Knowledge OS-1.0.0-win-arm64.exe` |
 
-> 未签名：macOS 首次打开需右键→打开，Windows 会提示 SmartScreen 警告。
+> macOS 未配置 Apple Developer 签名证书，因此不发布 ZIP 和 `latest-mac.yml`，客户端也不会自动检查更新。macOS 用户通过 Release 下载 DMG 手动覆盖安装。Windows 仍可使用 electron-updater 自动更新；未签名时会提示 SmartScreen 警告。

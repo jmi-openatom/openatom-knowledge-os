@@ -114,31 +114,32 @@ jobs:
       - name: Build UI library
         run: pnpm --filter @openatom/ui build
 
-      - name: Disable macOS code signing
+      - name: Build and package macOS app
         if: runner.os == 'macOS'
-        run: |
-          # Remove all codesigning certificates to ensure unsigned build
-          for identity in $(security find-identity -p codesigning -v | grep -oE '[A-F0-9]{40}'); do
-            security delete-certificate -Z "$identity" 2>/dev/null || true
-          done
-          echo "Remaining codesigning identities:"
-          security find-identity -p codesigning -v || true
-
-      - name: Build and package Electron app
         working-directory: desktop
         run: pnpm dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: Build and package Windows app
+        if: runner.os == 'Windows'
+        working-directory: desktop
+        run: pnpm dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Verify build artifacts
         if: runner.os == 'macOS'
         working-directory: desktop
+        shell: bash
         run: |
-          echo "=== latest-mac.yml ==="
-          cat release/latest-mac.yml || echo "NOT FOUND"
-          echo "=== Code signature check ==="
-          codesign -dv --verbose=2 release/*.app 2>&1 || echo "App is not signed (expected)"
+          test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
+          if find release -maxdepth 1 \( -name '*.zip' -o -name 'latest-mac.yml' \) -print -quit | grep -q .; then
+            echo "macOS auto-update artifacts must not be published for unsigned builds."
+            find release -maxdepth 1 \( -name '*.zip' -o -name 'latest-mac.yml' \) -print
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

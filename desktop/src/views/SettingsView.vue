@@ -12,6 +12,7 @@ const ai = useAiStore()
 const router = useRouter()
 const { pushToast } = useToast()
 const isElectron = Boolean(window.openatom)
+const isMacDesktop = window.openatom?.platform === 'darwin'
 
 const updateStatus = ref<UpdateStatusPayload>({ status: 'idle' })
 const appVersion = ref('—')
@@ -27,10 +28,17 @@ async function checkUpdate() {
     pushToast({ title: '浏览器预览不支持自动更新', tone: 'warning' })
     return
   }
+  if (isMacDesktop) {
+    updateStatus.value = { status: 'disabled-on-macos' }
+    pushToast({ title: 'macOS 暂不支持自动更新', description: '未签名版本请从 Release 下载 DMG 手动覆盖安装。', tone: 'warning' })
+    return
+  }
   updateStatus.value = { status: 'checking' }
   const result = await window.openatom.updater.check()
   if (result && result.status === 'disabled-in-development') {
     updateStatus.value = { status: 'dev-mode' }
+  } else if (result && result.status === 'disabled-on-macos') {
+    updateStatus.value = { status: 'disabled-on-macos' }
   }
 }
 
@@ -69,8 +77,12 @@ onMounted(async () => {
         pushToast({ title: '更新检查失败', description: payload.message, tone: 'danger' })
       }
     })
-    // Auto-check on mount
-    checkUpdate()
+    if (isMacDesktop) {
+      updateStatus.value = { status: 'disabled-on-macos' }
+    } else {
+      // Auto-check on mount
+      checkUpdate()
+    }
   }
 })
 
@@ -159,12 +171,15 @@ onBeforeUnmount(() => {
           <div v-else-if="updateStatus.status === 'dev-mode'" class="update-row current">
             <IconBolt :size="16" /> <span>开发模式下不检查更新</span>
           </div>
+          <div v-else-if="updateStatus.status === 'disabled-on-macos'" class="update-row current">
+            <IconBolt :size="16" /> <span>macOS 未签名版本暂不支持自动更新，请手动下载 DMG 覆盖安装</span>
+          </div>
           <div v-else-if="updateStatus.status === 'error'" class="update-row error">
             <IconX :size="16" /> <span>更新失败：{{ updateStatus.message }}</span>
           </div>
         </div>
 
-        <OaButton variant="outline" @click="checkUpdate" :disabled="updateStatus.status === 'checking' || updateStatus.status === 'downloading'">
+        <OaButton variant="outline" @click="checkUpdate" :disabled="isMacDesktop || updateStatus.status === 'checking' || updateStatus.status === 'downloading'">
           <template #prefix><IconRefresh :size="16" /></template>检查更新
         </OaButton>
       </OaPanel>

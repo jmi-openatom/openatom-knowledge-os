@@ -7,6 +7,8 @@ const path = require('node:path')
 const { exec } = require('node:child_process')
 
 const isDev = !app.isPackaged
+const isMac = process.platform === 'darwin'
+const isAutoUpdateEnabled = !isDev && !isMac
 const issuer = process.env.OPENATOM_OIDC_ISSUER || 'https://oauth.jmi-openatom.cn/api/v1'
 const clientId = process.env.OPENATOM_OIDC_CLIENT_ID || 'openatom-knowledge-desktop'
 const callbackPort = Number(process.env.OPENATOM_OIDC_CALLBACK_PORT || 47832)
@@ -310,10 +312,11 @@ ipcMain.handle('auth:get-access-token', () => readSession()?.access_token || nul
 ipcMain.handle('auth:refresh', refreshSession)
 ipcMain.handle('updater:check', async () => {
   if (isDev) return { status: 'disabled-in-development' }
+  if (isMac) return { status: 'disabled-on-macos' }
   return autoUpdater.checkForUpdates()
 })
 ipcMain.handle('updater:install', () => {
-  if (!isDev) autoUpdater.quitAndInstall()
+  if (isAutoUpdateEnabled) autoUpdater.quitAndInstall()
 })
 ipcMain.handle('app:get-version', () => app.getVersion())
 
@@ -334,7 +337,7 @@ autoUpdater.on('update-downloaded', (info) => mainWindow?.webContents.send('upda
 
 app.whenReady().then(() => {
   createWindow()
-  if (!isDev) autoUpdater.checkForUpdates()
+  if (isAutoUpdateEnabled) autoUpdater.checkForUpdates()
 })
 
 app.on('window-all-closed', () => {

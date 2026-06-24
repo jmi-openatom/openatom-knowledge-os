@@ -12,7 +12,7 @@ interface OpenAtomUser {
 }
 
 interface UpdateStatusPayload {
-  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'current' | 'error' | 'dev-mode' | 'disabled-in-development'
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'current' | 'error' | 'dev-mode' | 'disabled-in-development' | 'disabled-on-macos'
   percent?: number
   transferred?: number
   total?: number
