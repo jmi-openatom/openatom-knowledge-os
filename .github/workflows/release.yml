@@ -114,12 +114,31 @@ jobs:
       - name: Build UI library
         run: pnpm --filter @openatom/ui build
 
+      - name: Disable macOS code signing
+        if: runner.os == 'macOS'
+        run: |
+          # Remove all codesigning certificates to ensure unsigned build
+          for identity in $(security find-identity -p codesigning -v | grep -oE '[A-F0-9]{40}'); do
+            security delete-certificate -Z "$identity" 2>/dev/null || true
+          done
+          echo "Remaining codesigning identities:"
+          security find-identity -p codesigning -v || true
+
       - name: Build and package Electron app
         working-directory: desktop
         run: pnpm dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Verify build artifacts
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: |
+          echo "=== latest-mac.yml ==="
+          cat release/latest-mac.yml || echo "NOT FOUND"
+          echo "=== Code signature check ==="
+          codesign -dv --verbose=2 release/*.app 2>&1 || echo "App is not signed (expected)"
 
       - uses: actions/upload-artifact@v4
         with:
