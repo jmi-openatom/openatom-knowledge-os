@@ -4,6 +4,7 @@ import { renderMarkdown as mdRender } from '@/composables/useMarkdown'
 import {
   IconBookmark,
   IconCopy,
+  IconDownload,
   IconPaperclip,
   IconRefresh,
   IconSend2,
@@ -181,6 +182,69 @@ function copyAnswer(text: string) {
   navigator.clipboard.writeText(text)
   pushToast({ title: '已复制回答', tone: 'success' })
 }
+
+/** Parse markdown tables into rows of cells */
+function parseMarkdownTables(md: string): string[][][] {
+  const tables: string[][][] = []
+  const lines = md.split('\n')
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i].trim()
+    // Detect table header row: | ... | ... |
+    if (line.startsWith('|') && line.endsWith('|')) {
+      const header = splitRow(line)
+      i++
+      // Check next line is separator (|---|---|)
+      if (i < lines.length && /^\|?\s*[-:]+[-|\s:]+/.test(lines[i].trim())) {
+        i++
+        const rows: string[][] = [header]
+        while (i < lines.length && lines[i].trim().startsWith('|')) {
+          rows.push(splitRow(lines[i].trim()))
+          i++
+        }
+        tables.push(rows)
+        continue
+      }
+    }
+    i++
+  }
+  return tables
+}
+
+function splitRow(line: string): string[] {
+  return line
+    .replace(/^\||\|$/g, '')
+    .split('|')
+    .map((c) => c.trim().replace(/\*\*/g, '').replace(/\[\d+\]/g, '').trim())
+}
+
+function downloadFile(content: string, filename: string, mime: string) {
+  const blob = new Blob([content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function downloadAnswer(answer: string, question: string) {
+  const tables = parseMarkdownTables(answer)
+  const safeName = question.replace(/[\\/:*?"<>|]/g, '').slice(0, 40) || 'AI整理结果'
+
+  if (tables.length > 0) {
+    // Has tables → generate CSV (Excel-compatible, UTF-8 BOM)
+    const csv = tables.map((table) =>
+      table.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
+    ).join('\n\n')
+    downloadFile('\uFEFF' + csv, `${safeName}.csv`, 'text/csv;charset=utf-8')
+    pushToast({ title: '已下载 CSV 表格', tone: 'success' })
+  } else {
+    // No tables → download as Markdown
+    downloadFile(answer, `${safeName}.md`, 'text/markdown')
+    pushToast({ title: '已下载 Markdown 文件', tone: 'success' })
+  }
+}
 </script>
 
 <template>
@@ -219,6 +283,7 @@ function copyAnswer(text: string) {
                 <time>{{ item.createdAt }}</time>
                 <div class="answer-actions">
                   <OaIconButton label="复制回答" size="sm" @click="copyAnswer(item.answer)"><IconCopy :size="15" /></OaIconButton>
+                  <OaIconButton label="下载文件" size="sm" @click="downloadAnswer(item.answer, item.question)"><IconDownload :size="15" /></OaIconButton>
                   <OaIconButton label="重新生成" size="sm" :disabled="knowledge.loading" @click="regenerate"><IconRefresh :size="15" /></OaIconButton>
                   <OaIconButton label="回答有帮助" size="sm" :active="feedbackState === 'up'" @click="handleFeedback('up')"><IconThumbUp :size="15" /></OaIconButton>
                   <OaIconButton label="回答需改进" size="sm" :active="feedbackState === 'down'" @click="handleFeedback('down')"><IconThumbDown :size="15" /></OaIconButton>
@@ -229,6 +294,7 @@ function copyAnswer(text: string) {
                 <time>{{ item.createdAt }}</time>
                 <div class="answer-actions">
                   <OaIconButton label="复制回答" size="sm" @click="copyAnswer(item.answer)"><IconCopy :size="15" /></OaIconButton>
+                  <OaIconButton label="下载文件" size="sm" @click="downloadAnswer(item.answer, item.question)"><IconDownload :size="15" /></OaIconButton>
                 </div>
               </footer>
             </div>
