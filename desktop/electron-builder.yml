@@ -13,6 +13,7 @@ icon: resources/icon
 mac:
   category: public.app-category.productivity
   icon: resources/icon.icns
+  identity: null
   target:
     - target: dmg
       arch:
