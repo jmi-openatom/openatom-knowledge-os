@@ -17,6 +17,7 @@ const redirectUri = `http://127.0.0.1:${callbackPort}/auth/callback`
 let mainWindow
 let pendingLogin
 let previewWindow = null
+let adminWindow = null
 
 function createPreviewWindow(fileId) {
   // If a preview window already exists, just navigate it to the new file
@@ -50,6 +51,111 @@ function createPreviewWindow(fileId) {
 
   previewWindow.on('closed', () => {
     previewWindow = null
+  })
+}
+
+function createAdminWindow() {
+  if (adminWindow && !adminWindow.isDestroyed()) {
+    adminWindow.focus()
+    return
+  }
+
+  const sessionData = readSession()
+  const token = sessionData?.access_token || ''
+  const adminUrl = 'https://www.jmi-openatom.cn/admin'
+
+  const { session: electronSession } = require('electron')
+  const adminPartition = 'persist:admin'
+  const adminSession = electronSession.fromPartition(adminPartition)
+
+  adminWindow = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 800,
+    minHeight: 600,
+    title: '管理后台',
+    autoHideMenuBar: true,
+    backgroundColor: '#fff',
+    webPreferences: {
+      partition: adminPartition,
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+
+  if (token) {
+    // 1. Set cookies on admin domain
+    const cookieUrl = 'https://www.jmi-openatom.cn'
+    const cookieNames = ['token', 'access_token', 'auth_token', 'jwt', 'Authorization']
+    for (const name of cookieNames) {
+      const value = name === 'Authorization' ? `Bearer ${token}` : token
+      adminSession.cookies.set({ url: cookieUrl, name, value, path: '/', secure: true, httpOnly: false, expirationDate: Math.floor(Date.now() / 1000) + 86400 })
+        .catch((err) => console.warn(`[Admin] Cookie '${name}' failed:`, err.message))
+    }
+
+    // 2. Inject Authorization header on all API requests
+    adminSession.webRequest.onBeforeSendHeaders(
+      { urls: ['https://www.jmi-openatom.cn/*', 'https://*.jmi-openatom.cn/*'] },
+      (details, callback) => {
+        details.requestHeaders['Authorization'] = `Bearer ${token}`
+        callback({ requestHeaders: details.requestHeaders })
+      }
+    )
+
+    // 3. After page loads, inject token into localStorage / sessionStorage
+    adminWindow.webContents.on('did-finish-load', () => {
+      const injectScript = `
+        (function() {
+          try {
+            var token = ${JSON.stringify(token)};
+            var user = ${JSON.stringify(sessionData?.user || null)};
+            // Try common localStorage keys used by SPA admin panels
+            var storageKeys = ['token', 'access_token', 'auth_token', 'jwt_token', 'Authorization'];
+            storageKeys.forEach(function(key) {
+              var val = key === 'Authorization' ? 'Bearer ' + token : token;
+              localStorage.setItem(key, val);
+              sessionStorage.setItem(key, val);
+            });
+            // Try setting user info
+            if (user) {
+              localStorage.setItem('user', JSON.stringify(user));
+              sessionStorage.setItem('user', JSON.stringify(user));
+            }
+            // Try common auth store patterns
+            try {
+              var authData = { access_token: token, token_type: 'Bearer', user: user };
+              localStorage.setItem('auth', JSON.stringify(authData));
+              localStorage.setItem('authData', JSON.stringify(authData));
+              localStorage.setItem('session', JSON.stringify(authData));
+            } catch(e) {}
+            console.log('[OpenAtom Desktop] Auth token injected');
+          } catch(e) {
+            console.warn('[OpenAtom Desktop] Token injection failed:', e);
+          }
+        })();
+      `
+      adminWindow.webContents.executeJavaScript(injectScript).catch(() => {})
+    })
+
+    // 4. Also inject on every navigation (for SPA routing)
+    adminWindow.webContents.on('did-navigate-in-page', () => {
+      adminWindow.webContents.executeJavaScript(`
+        try {
+          var t = ${JSON.stringify(token)};
+          ['token','access_token','auth_token','jwt_token'].forEach(k => {
+            if (!localStorage.getItem(k)) localStorage.setItem(k, t);
+          });
+        } catch(e) {}
+      `).catch(() => {})
+    })
+  }
+
+  adminWindow.loadURL(adminUrl)
+
+  adminWindow.on('closed', () => {
+    adminWindow = null
   })
 }
 
@@ -297,6 +403,9 @@ function createWindow() {
 ipcMain.handle('preview:open', (_event, fileId) => {
   if (!fileId) return
   createPreviewWindow(fileId)
+})
+ipcMain.handle('admin:open', () => {
+  createAdminWindow()
 })
 
 ipcMain.handle('auth:login', startPkceLogin)

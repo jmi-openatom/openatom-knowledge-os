@@ -89,7 +89,7 @@ public class OidcBearerTokenFilter extends OncePerRequestFilter {
   }
 
   private String mapRole(List<String> roles, List<String> permissions) {
-    // Check roles first
+    // Check roles first - must be an explicit admin role
     boolean isAdmin = roles.stream().anyMatch(r -> {
       String lower = r.toLowerCase();
       return lower.equals("admin") || lower.equals("super_admin")
@@ -97,14 +97,17 @@ public class OidcBearerTokenFilter extends OncePerRequestFilter {
           || lower.contains("社长") || lower.equals("president")
           || lower.equals("club_admin") || lower.equals("system_admin");
     });
-    // If not admin by role, check permissions for admin-level access
+    // Only check permissions for admin if they have explicit admin-level permissions
+    // Use exact match to avoid false positives like form:manage or activity:delete
     if (!isAdmin && !permissions.isEmpty()) {
       isAdmin = permissions.stream().anyMatch(p -> {
         String lower = p.toLowerCase();
-        return lower.contains("admin") || lower.contains("manage")
-            || lower.contains("delete") || lower.contains("system");
+        return lower.equals("admin") || lower.equals("admin:manage")
+            || lower.equals("system:admin") || lower.equals("super:admin")
+            || lower.equals("admin:all") || lower.equals("*");
       });
     }
+    log.info("Mapped roles [{}] permissions [{}] to admin={}", roles, permissions, isAdmin);
     if (isAdmin) return "admin";
     boolean isLeader = roles.stream().anyMatch(r -> {
       String lower = r.toLowerCase();

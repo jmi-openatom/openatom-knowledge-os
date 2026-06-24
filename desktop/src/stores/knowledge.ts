@@ -13,6 +13,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const error = ref('')
   const streaming = ref(false)
   const formatting = ref(false)
+  const thinking = ref(false)
   const streamingAnswer = ref<ChatAnswer | null>(null)
   const history = reactive(new Map<number, ChatAnswer[]>())
   let abortController: AbortController | null = null
@@ -59,6 +60,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
     // Show streaming answer via dedicated ref (not answer.value)
     streamingAnswer.value = newAnswer
+    thinking.value = true
 
     // Determine or create conversation
     let convId = activeConversationId.value
@@ -81,10 +83,17 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (token) headers.Authorization = `Bearer ${token}`
 
+      // Build conversation history (last 5 Q&A pairs = 10 messages)
+      const existingHistory = history.get(convId) || []
+      const historyMessages = existingHistory.slice(-5).flatMap((item) => [
+        { role: 'user', content: item.question },
+        { role: 'assistant', content: item.answer },
+      ])
+
       const response = await fetch(`${apiClient.defaults.baseURL}/rag/chat/stream`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ question, scope }),
+        body: JSON.stringify({ question, scope, history: historyMessages }),
         signal: abortController.signal,
       })
 
@@ -121,6 +130,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
                 streamingAnswer.value = { ...newAnswer }
               } catch {}
             } else if (currentEvent === 'token') {
+              if (thinking.value) thinking.value = false
               newAnswer.answer += data
               streamingAnswer.value = { ...newAnswer }
             } else if (currentEvent === 'error') {
@@ -173,6 +183,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     } finally {
       loading.value = false
       streaming.value = false
+      thinking.value = false
       streamingAnswer.value = null
       abortController = null
     }
@@ -227,5 +238,5 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
-  return { conversations, activeConversationId, files, loading, streaming, formatting, streamingAnswer, error, history, ask, cancelStream, loadConversation, loadFiles, loadConversations, uploadFile, deleteFile, createConversation, deleteConversation }
+  return { conversations, activeConversationId, files, loading, streaming, formatting, thinking, streamingAnswer, error, history, ask, cancelStream, loadConversation, loadFiles, loadConversations, uploadFile, deleteFile, createConversation, deleteConversation }
 })

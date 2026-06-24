@@ -6,7 +6,12 @@ import java.util.List;
 public final class RagDtos {
   private RagDtos() {}
 
-  public record ChatRequest(@NotBlank String question, String scope) {}
+  public record ChatMessage(String role, String content) {}
+
+  public record ChatRequest(
+      @NotBlank String question,
+      String scope,
+      List<ChatMessage> history) {}
 
   public record Source(
       Long id,
@@ -30,6 +35,8 @@ public final class RagDtos {
   public record OrganizeRequest(@NotBlank String question, @NotBlank String answer) {}
 
   public record OrganizeResponse(String title, String markdown) {}
+
+  public record ExportRequest(@NotBlank String content, String title) {}
 
   public record AiStatus(
       String provider,

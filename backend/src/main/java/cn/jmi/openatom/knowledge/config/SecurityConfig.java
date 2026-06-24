@@ -34,7 +34,10 @@ public class SecurityConfig {
             .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
             .requestMatchers("/actuator/health", "/api/public/**", "/error").permitAll()
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-            .anyRequest().authenticated())
+            // Allow authenticated users to read their own identity so the frontend can
+            // detect and reject non-admin logins. Everything else requires an admin role.
+            .requestMatchers("/api/auth/me").authenticated()
+            .anyRequest().hasAnyAuthority("admin:manage", "ROLE_ADMIN"))
         .exceptionHandling(exceptions -> exceptions
             .authenticationEntryPoint((request, response, authException) -> {
               response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -42,6 +45,13 @@ public class SecurityConfig {
               response.setCharacterEncoding("UTF-8");
               response.getWriter().write(
                   "{\"status\":401,\"error\":\"Unauthorized\",\"message\":\"请先登录\"}");
+            })
+            .accessDeniedHandler((request, response, accessDeniedException) -> {
+              response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+              response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+              response.setCharacterEncoding("UTF-8");
+              response.getWriter().write(
+                  "{\"status\":403,\"error\":\"Forbidden\",\"message\":\"仅管理员可登录本系统\"}");
             }))
         .addFilterBefore(bearerTokenFilter, UsernamePasswordAuthenticationFilter.class)
         .build();

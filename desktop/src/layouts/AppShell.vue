@@ -3,12 +3,16 @@ import {computed} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {
   IconAtom2,
+  IconBell,
   IconBooks,
+  IconCalendarEvent,
+  IconForms,
   IconFileText,
   IconFolders,
   IconMessageCircle,
   IconSearch,
   IconSettings,
+  IconShieldCog,
   IconUsers,
 } from '@tabler/icons-vue'
 import {OaAvatar, OaGlassSidebar, OaNavItem, OaToastViewport} from '@openatom/ui'
@@ -25,8 +29,20 @@ const items = computed(() => [
   {path: '/wiki', label: 'Wiki', icon: IconBooks},
   {path: '/search', label: '搜索', icon: IconSearch},
   {path: '/documents', label: '在线文档', icon: IconFileText},
+  // ...(auth.isAdmin ? [{path: '/activities', label: '活动', icon: IconCalendarEvent}] : []),
+  // ...(auth.isAdmin ? [{path: '/notifications', label: '通知', icon: IconBell}] : []),
+  ...(auth.isAdmin ? [{path: '/forms', label: '表单', icon: IconForms}] : []),
   ...(auth.isAdmin ? [{path: '/members', label: '成员', icon: IconUsers}] : []),
+  ...(auth.isAdmin ? [{path: '/admin', label: '管理后台', icon: IconShieldCog}] : []),
 ])
+
+function handleNavClick(item: { path: string }) {
+  if (item.path === '/admin') {
+    window.openatom?.admin?.open()
+  } else {
+    router.push(item.path)
+  }
+}
 </script>
 
 <template>
@@ -52,7 +68,7 @@ const items = computed(() => [
           :label="item.label"
           :active="route.path === item.path"
           compact
-          @click="router.push(item.path)"
+          @click="handleNavClick(item)"
       >
         <template #icon>
           <component :is="item.icon" :size="21" :stroke-width="1.7"/>

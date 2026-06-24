@@ -1,10 +1,13 @@
 package cn.jmi.openatom.knowledge.controller;
 
 import cn.jmi.openatom.knowledge.dto.RagDtos;
+import cn.jmi.openatom.knowledge.service.ExcelExportService;
 import cn.jmi.openatom.knowledge.service.RagService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,11 +16,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/rag")
 @RequiredArgsConstructor
 public class RagController {
   private final RagService service;
+  private final ExcelExportService exportService;
 
   @PostMapping("/chat")
   @PreAuthorize("hasAnyAuthority('ai:chat', 'ROLE_ADMIN', 'ROLE_LEADER')")
@@ -53,5 +58,23 @@ public class RagController {
   @PreAuthorize("hasAnyAuthority('ai:chat', 'ROLE_ADMIN', 'ROLE_LEADER')")
   public RagDtos.AiStatus testConnection() {
     return service.testConnection();
+  }
+
+  @PostMapping(value = "/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+  @PreAuthorize("hasAnyAuthority('ai:chat', 'ROLE_ADMIN', 'ROLE_LEADER')")
+  public ResponseEntity<byte[]> exportExcel(@Valid @RequestBody RagDtos.ExportRequest request) {
+    try {
+      byte[] xlsx = exportService.exportToExcel(request.content(), request.title());
+      String filename = (request.title() != null && !request.title().isBlank()
+          ? request.title().replaceAll("[\\\\/?*\\[\\]:]", "")
+          : "导出数据");
+      return ResponseEntity.ok()
+          .header("Content-Disposition", "attachment; filename=\"" + filename + ".xlsx\"")
+          .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+          .body(xlsx);
+    } catch (Exception e) {
+      log.error("Export failed", e);
+      return ResponseEntity.internalServerError().build();
+    }
   }
 }

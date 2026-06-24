@@ -1,5 +1,5 @@
-appId: cn.jmi.openatom.knowledge
-productName: OpenAtom Knowledge OS
+appId: cn.jmi-openatom.desk
+productName: JMI-OPENATOM DESK
 artifactName: OpenAtom.Knowledge.OS-${version}-${os}-${arch}.${ext}
 directories:
   output: release

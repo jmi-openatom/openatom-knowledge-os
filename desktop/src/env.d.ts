@@ -42,5 +42,8 @@ interface Window {
       open: (fileId: number) => Promise<void>
       onNavigate: (listener: (payload: { fileId: number }) => void) => () => void
     }
+    admin: {
+      open: () => Promise<void>
+    }
   }
 }

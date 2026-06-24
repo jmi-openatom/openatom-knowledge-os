@@ -14,6 +14,8 @@ spring:
 app:
   security:
     dev-mode: true
+  management:
+    mock: ${MANAGEMENT_MOCK:false}
   storage:
     provider: local
   search:

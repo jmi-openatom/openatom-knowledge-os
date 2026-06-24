@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('openatom', {
       return () => ipcRenderer.removeListener('preview:navigate', handler)
     },
   },
+  admin: {
+    open: () => ipcRenderer.invoke('admin:open'),
+  },
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
     install: () => ipcRenderer.invoke('updater:install'),

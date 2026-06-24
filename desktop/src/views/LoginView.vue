@@ -24,27 +24,31 @@ function demo() {
 
 <template>
   <main class="login-view">
+    <div class="login-drag-bar" data-tauri-drag-region></div>
     <div class="login-view__mesh" />
     <section class="login-copy">
-      <span class="login-brand"><IconAtom2 :size="26" /> OpenAtom Knowledge OS</span>
+      <span class="login-brand"><IconAtom2 :size="26" /> JMI-OPENATOM DESK</span>
       <h1>让社团知识，<br>真正可以被 AI 理解。</h1>
       <p>统一管理资料、在线文档与 Wiki，通过可信引用快速获得答案。</p>
       <ul>
         <li><IconCheck :size="16" /> OAuth2 + OIDC 安全登录</li>
         <li><IconCheck :size="16" /> 跨文件检索与 RAG 问答</li>
         <li><IconCheck :size="16" /> 完整权限、版本和审计能力</li>
+        <li><IconCheck :size="16" /> 后台管理能力</li>
       </ul>
     </section>
     <OaPanel class="login-card" padding="lg" elevated>
       <span class="login-card__eyebrow">OPENATOM IDENTITY</span>
-      <h2>登录知识 OS</h2>
+      <h2>登录工作台</h2>
       <p>将通过系统浏览器打开统一认证中心，并使用 PKCE 安全完成授权。</p>
       <OaButton tone="primary" size="lg" block :loading="auth.loading" @click="login">
         <template #prefix><IconBrandOauth :size="19" /></template>
-        使用 OpenAtom 统一登录
+        使用 JMI-OPENATOM 统一登录
       </OaButton>
 <!--      <button class="demo-link" type="button" @click="demo">进入本地演示模式</button>-->
+
       <p v-if="auth.error" class="login-error">{{ auth.error }}</p>
+      <br><br>
       <small>继续即表示你同意组织的数据与权限管理规范。</small>
     </OaPanel>
   </main>
@@ -52,6 +56,7 @@ function demo() {
 
 <style scoped>
 .login-view { position: relative; display: grid; grid-template-columns: minmax(0, 1.1fr) 430px; gap: 64px; min-height: 100vh; padding: 80px max(7vw, 48px); overflow: hidden; background: #fafafa; place-items: center stretch; }
+.login-drag-bar { position: absolute; top: 0; left: 0; right: 0; height: 48px; -webkit-app-region: drag; z-index: 10; }
 .login-view__mesh { position: absolute; top: -18%; right: -8%; width: 74%; height: 70%; opacity: .52; background: url('/assets/ai-mesh-background.png') center / cover no-repeat; pointer-events: none; }
 .login-copy, .login-card { position: relative; z-index: 1; }
 .login-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 44px; font-weight: 600; }

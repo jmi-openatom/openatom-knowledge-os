@@ -19,14 +19,26 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref('')
 
   const isAuthenticated = computed(() => Boolean(user.value))
-  const isAdmin = computed(() => user.value?.role === 'admin' || user.value?.role === 'leader')
+  const isAdmin = computed(() => user.value?.role === 'admin')
+
+  async function rejectNonAdmin() {
+    await window.openatom?.auth.logout()
+    localStorage.removeItem('openatom-demo-session')
+    user.value = null
+    error.value = '仅管理员可登录本系统，当前账号无权访问。'
+  }
 
   async function restore() {
     if (initialized.value) return
     try {
       const session = await window.openatom?.auth.getSession()
       if (session?.user) {
-        user.value = normalizeUser(session.user)
+        const normalized = normalizeUser(session.user)
+        if (normalized.role !== 'admin') {
+          await rejectNonAdmin()
+        } else {
+          user.value = normalized
+        }
       } else if (localStorage.getItem('openatom-demo-session') === '1') {
         user.value = demoUser
       }
@@ -43,7 +55,12 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('浏览器预览不支持系统 OAuth 回调，请使用演示登录或 Electron 客户端。')
       }
       const session = await window.openatom.auth.login()
-      user.value = normalizeUser(session.user)
+      const normalized = normalizeUser(session.user)
+      if (normalized.role !== 'admin') {
+        await rejectNonAdmin()
+        throw new Error('仅管理员可登录本系统，当前账号无权访问。')
+      }
+      user.value = normalized
     } catch (reason) {
       error.value = reason instanceof Error ? reason.message : '登录失败'
       throw reason
@@ -66,16 +83,21 @@ export const useAuthStore = defineStore('auth', () => {
   function normalizeUser(input: OpenAtomUser): KnowledgeUser {
     const roles = input.roles || (input.role ? [input.role] : [])
     const permissions = input.permissions || []
-    // Check roles first, then fall back to permissions for admin detection
+    console.log('[Auth] normalizeUser input:', JSON.stringify({ roles, permissions }))
+    // Check roles first - must be an explicit admin role
     const hasAdminRole = roles.some((r) => {
       const lower = r.toLowerCase()
       return lower === 'admin' || lower === 'super_admin' || lower === 'administrator'
         || lower.includes('社长') || lower === 'president' || lower === 'club_admin'
+        || lower === 'system_admin' || lower === 'root'
     })
+    // Only check permissions for admin if they have explicit admin-level permissions
+    // Use exact match instead of includes to avoid false positives like form:manage
     const hasAdminPermission = !hasAdminRole && permissions.some((p) => {
       const lower = p.toLowerCase()
-      return lower.includes('admin') || lower.includes('manage')
-        || lower.includes('delete') || lower.includes('system')
+      return lower === 'admin' || lower === 'admin:manage'
+        || lower === 'system:admin' || lower === 'super:admin'
+        || lower === 'admin:all' || lower === '*'
     })
     const role: KnowledgeUser['role'] = (hasAdminRole || hasAdminPermission)
       ? 'admin'
@@ -84,6 +106,7 @@ export const useAuthStore = defineStore('auth', () => {
         : roles.includes('guest')
           ? 'guest'
           : 'member'
+    console.log('[Auth] normalizeUser result: role =', role)
     return { ...input, role }
   }
 

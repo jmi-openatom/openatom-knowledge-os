@@ -6,13 +6,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AppProperties(
     Security security,
     Oidc oidc,
+    Management management,
     Storage storage,
     Search search,
-    Ai ai) {
+    Ai ai,
+    WebSearch webSearch) {
 
   public record Security(boolean devMode) {}
 
   public record Oidc(String issuer, String introspectionUri, String userInfoUri) {}
+
+  public record Management(String baseUrl, String username, String password, boolean mock) {}
 
   public record Storage(
       String provider,
@@ -25,4 +29,10 @@ public record AppProperties(
   public record Search(String endpoint, String index) {}
 
   public record Ai(String provider, String baseUrl, String apiKey, String model) {}
+
+  public record WebSearch(
+      boolean enabled,
+      String provider,
+      String apiKey,
+      int maxResults) {}
 }

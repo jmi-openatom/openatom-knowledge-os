@@ -42,6 +42,11 @@ app:
     issuer: ${OIDC_ISSUER:https://oauth.jmi-openatom.cn/api/v1}
     introspection-uri: ${OIDC_INTROSPECTION_URI:https://oauth.jmi-openatom.cn/api/v1/oauth/introspect}
     user-info-uri: ${OIDC_USERINFO_URI:https://oauth.jmi-openatom.cn/api/v1/oauth/userinfo}
+  management:
+    base-url: ${MANAGEMENT_BASE_URL:https://api.jmi-openatom.cn/api/v1}
+    username: ${MANAGEMENT_USERNAME:JMI-OPENATOM}
+    password: ${MANAGEMENT_PASSWORD:wUpi2eqYCwDRQNs}
+    mock: ${MANAGEMENT_MOCK:false}
   storage:
     provider: ${STORAGE_PROVIDER:local}
     local-root: ${STORAGE_LOCAL_ROOT:./storage}
@@ -55,5 +60,10 @@ app:
   ai:
     provider: ${AI_PROVIDER:deepseek}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
-    api-key: ${AI_API_KEY:}
+    api-key: ${AI_API_KEY:sk-e227e0117fb1409e864d708d2e2cdc09}
     model: ${AI_MODEL:deepseek-v4-flash}
+  web-search:
+    enabled: ${WEB_SEARCH_ENABLED:true}
+    provider: ${WEB_SEARCH_PROVIDER:tavily}
+    api-key: ${TAVILY_API_KEY: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}
+    max-results: 3

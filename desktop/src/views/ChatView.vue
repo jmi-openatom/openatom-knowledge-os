@@ -19,8 +19,8 @@ import SourceInspector from '@/components/SourceInspector.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useFilePreviewerStore } from '@/stores/filePreviewer'
 import { useKnowledgeStore } from '@/stores/knowledge'
-import { createWikiPage, organizeToWiki } from '@/services/api'
-import type { ChatAnswer, WikiNode } from '@/types'
+import { apiClient, createWikiPage, organizeToWiki } from '@/services/api'
+import type { ChatAnswer, SourceReference, WikiNode } from '@/types'
 
 const auth = useAuthStore()
 const knowledge = useKnowledgeStore()
@@ -99,6 +99,17 @@ const lastAnswer = computed(() => {
 
 function triggerFileInput() {
   fileInput.value?.click()
+}
+
+function handleSourceClick(source: SourceReference) {
+  // Web sources (id >= 90000 or type === '网络搜索') → open URL in browser
+  if (source.id >= 90000 || source.type === '网络搜索' || source.extension === 'url') {
+    const url = source.path || source.fileName
+    if (url) window.open(url, '_blank')
+    return
+  }
+  // Local file → open preview
+  filePreviewer.show(source.id)
 }
 
 async function handleFileSelect(event: Event) {
@@ -228,21 +239,33 @@ function downloadFile(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(url)
 }
 
-function downloadAnswer(answer: string, question: string) {
-  const tables = parseMarkdownTables(answer)
+async function downloadAnswer(answer: string, question: string) {
   const safeName = question.replace(/[\\/:*?"<>|]/g, '').slice(0, 40) || 'AI整理结果'
-
-  if (tables.length > 0) {
-    // Has tables → generate CSV (Excel-compatible, UTF-8 BOM)
-    const csv = tables.map((table) =>
-      table.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
-    ).join('\n\n')
-    downloadFile('\uFEFF' + csv, `${safeName}.csv`, 'text/csv;charset=utf-8')
-    pushToast({ title: '已下载 CSV 表格', tone: 'success' })
-  } else {
-    // No tables → download as Markdown
+  pushToast({ title: '正在生成 Excel 文件…', tone: 'neutral' })
+  try {
+    const token = await window.openatom?.auth.getAccessToken()
+    const response = await fetch(`${apiClient.defaults.baseURL}/rag/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ content: answer, title: safeName }),
+    })
+    if (!response.ok) throw new Error(`导出失败（${response.status}）`)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${safeName}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    pushToast({ title: '已下载 Excel 文件', tone: 'success' })
+  } catch (error) {
+    console.error('Export failed:', error)
+    // Fallback: download as markdown
     downloadFile(answer, `${safeName}.md`, 'text/markdown')
-    pushToast({ title: '已下载 Markdown 文件', tone: 'success' })
+    pushToast({ title: 'Excel 生成失败，已下载 Markdown', tone: 'warning' })
   }
 }
 </script>
@@ -274,7 +297,7 @@ function downloadAnswer(answer: string, question: string) {
               <section v-if="item.sources && item.sources.length" class="inline-sources">
                 <h2>引用来源</h2>
                 <div>
-                  <OaTag v-for="(source, sIndex) in item.sources" :key="source.id" tone="primary" class="source-tag" @click="filePreviewer.show(source.id)">
+                  <OaTag v-for="(source, sIndex) in item.sources" :key="source.id" tone="primary" class="source-tag" @click="handleSourceClick(source)">
                     {{ sIndex + 1 }}　{{ source.title }}
                   </OaTag>
                 </div>
@@ -307,11 +330,16 @@ function downloadAnswer(answer: string, question: string) {
           <article class="answer-card">
             <div class="answer-card__avatar"><IconSparkles :size="20" /></div>
             <div class="answer-card__content">
-              <div class="markdown-body" v-html="renderMarkdown(knowledge.streamingAnswer.answer)" />
+              <!-- Thinking indicator: shown when answer is empty -->
+              <div v-if="!knowledge.streamingAnswer.answer && knowledge.thinking" class="thinking-indicator">
+                <OaSpinner :size="16" />
+                <span class="thinking-text">正在检索资料并思考中…</span>
+              </div>
+              <div v-else class="markdown-body" v-html="renderMarkdown(knowledge.streamingAnswer.answer)" />
               <section v-if="knowledge.streamingAnswer.sources && knowledge.streamingAnswer.sources.length" class="inline-sources">
                 <h2>引用来源</h2>
                 <div>
-                  <OaTag v-for="(source, sIndex) in knowledge.streamingAnswer.sources" :key="source.id" tone="primary" class="source-tag" @click="filePreviewer.show(source.id)">
+                  <OaTag v-for="(source, sIndex) in knowledge.streamingAnswer.sources" :key="source.id" tone="primary" class="source-tag" @click="handleSourceClick(source)">
                     {{ sIndex + 1 }}　{{ source.title }}
                   </OaTag>
                 </div>
@@ -319,7 +347,8 @@ function downloadAnswer(answer: string, question: string) {
               <footer>
                 <time>{{ knowledge.streamingAnswer.createdAt }}</time>
                 <div class="answer-actions">
-                  <span v-if="knowledge.formatting" class="formatting-hint"><OaSpinner :size="13" /> 优化排版中…</span>
+                  <span v-if="knowledge.thinking" class="formatting-hint"><OaSpinner :size="13" /> 正在思考…</span>
+                  <span v-else-if="knowledge.formatting" class="formatting-hint"><OaSpinner :size="13" /> 优化排版中…</span>
                   <OaIconButton v-else label="停止生成" size="sm" @click="knowledge.cancelStream()"><IconSquare :size="15" /></OaIconButton>
                 </div>
               </footer>
@@ -409,6 +438,9 @@ function downloadAnswer(answer: string, question: string) {
 .answer-actions { display: flex; gap: 2px; }
 .formatting-hint { display: inline-flex; align-items: center; gap: 6px; color: var(--oa-color-muted); font-size: 10px; }
 .answer-loading { display: flex; align-items: center; gap: 9px; margin: 16px 0 0 45px; color: var(--oa-color-muted); font-size: 11px; }
+.thinking-indicator { display: flex; align-items: center; gap: 10px; padding: 8px 0; color: var(--oa-color-muted); font-size: 13px; }
+.thinking-text { animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 .answer-error { margin: 16px 0 0 45px; padding: 10px 14px; border-radius: 8px; color: #c0392b; background: #fdecea; font-size: 11px; }
 .composer { margin: 0 18px 18px; padding: 11px; border: 1px solid var(--oa-color-hairline); border-radius: 10px; background: #fff; box-shadow: 0 8px 30px -20px rgb(0 0 0 / 30%); }
 .composer__scope { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }

@@ -160,3 +160,298 @@ export async function organizeToWiki(question: string, answer: string): Promise<
   )
   return response.data ?? { title: question, markdown: answer }
 }
+
+// ---- Management proxy (activities & notifications) ----
+// These endpoints proxy to the external openatom-system, which wraps responses in a
+// Result<T> envelope: { code, message, data, traceId }. We unwrap and surface business
+// errors as thrown Error messages.
+
+interface Result<T> {
+  code: number
+  message: string
+  data: T
+  traceId?: string
+}
+
+export interface PageData<T> {
+  list: T[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export interface Activity {
+  id: number
+  title: string
+  summary?: string
+  descriptionMarkdown?: string
+  activityAt?: string
+  endAt?: string
+  location?: string
+  status: 'draft' | 'published' | 'closed'
+  coverUrl?: string
+  registrationRequired?: boolean
+  registrationStartAt?: string
+  registrationEndAt?: string
+  participationPoints?: number
+  createdAt?: string
+}
+
+export interface NotificationItem {
+  id: number
+  title: string
+  content: string
+  type?: string
+  isAll?: boolean
+  receiverUserIds?: number[]
+  createdAt?: string
+}
+
+async function managementRequest<T>(config: AxiosRequestConfig): Promise<T> {
+  const response = await apiClient.request<Result<T>>(config)
+  const result = response.data
+  if (result && result.code !== 0) {
+    throw new Error(result.message || '操作失败')
+  }
+  return (result?.data ?? (null as unknown)) as T
+}
+
+// Normalize list responses that may be either a direct array or a PageDataVO object.
+function normalizePage<T>(raw: unknown): PageData<T> {
+  if (Array.isArray(raw)) {
+    return { list: raw as T[], page: 1, pageSize: raw.length, total: raw.length }
+  }
+  if (raw && typeof raw === 'object' && Array.isArray((raw as PageData<T>).list)) {
+    return raw as PageData<T>
+  }
+  return { list: [], page: 1, pageSize: 0, total: 0 }
+}
+
+// Activities
+export async function getActivities(params?: {
+  keyword?: string
+  status?: string
+  page?: number
+  pageSize?: number
+}): Promise<PageData<Activity> | null> {
+  const raw = await managementRequest<unknown>({ method: 'GET', url: '/management/activities', params })
+  return normalizePage<Activity>(raw)
+}
+
+export async function getActivity(id: number): Promise<Activity | null> {
+  return managementRequest<Activity>({ method: 'GET', url: `/management/activities/${id}` })
+}
+
+export async function createActivity(data: Partial<Activity>): Promise<Activity | null> {
+  return managementRequest<Activity>({ method: 'POST', url: '/management/activities', data })
+}
+
+export async function updateActivity(id: number, data: Partial<Activity>): Promise<Activity | null> {
+  return managementRequest<Activity>({ method: 'PATCH', url: `/management/activities/${id}`, data })
+}
+
+export async function deleteActivity(id: number): Promise<void> {
+  await managementRequest<unknown>({ method: 'DELETE', url: `/management/activities/${id}` })
+}
+
+// Notifications
+export async function getAdminNotifications(params?: {
+  keyword?: string
+  page?: number
+  pageSize?: number
+}): Promise<PageData<NotificationItem> | null> {
+  const raw = await managementRequest<unknown>({
+    method: 'GET',
+    url: '/management/notifications/admin',
+    params,
+  })
+  return normalizePage<NotificationItem>(raw)
+}
+
+export async function sendNotification(data: {
+  title: string
+  content: string
+  type?: string
+  isAll?: boolean
+  receiverUserIds?: number[]
+}): Promise<NotificationItem | null> {
+  return managementRequest<NotificationItem>({
+    method: 'POST',
+    url: '/management/notifications/admin',
+    data,
+  })
+}
+
+export async function deleteNotification(id: number): Promise<void> {
+  await managementRequest<unknown>({ method: 'DELETE', url: `/management/notifications/admin/${id}` })
+}
+
+export async function getUnreadNotificationCount(): Promise<number> {
+  const result = await managementRequest<number>({ method: 'GET', url: '/management/notifications/unread-count' })
+  return typeof result === 'number' ? result : 0
+}
+
+export async function markNotificationRead(id: number): Promise<void> {
+  await managementRequest<unknown>({ method: 'POST', url: `/management/notifications/${id}/read` })
+}
+
+// ---- Forms (站点表单) ----
+// Matches the external system schema:
+//   - form uses `name` (not title), `formSchema` (JSON string, not fields array)
+//   - status: open / closed
+//   - field uses `key`/`label` (not name), options: [{label, value}]
+
+export interface FormFieldOption {
+  label: string
+  value: string
+}
+
+export interface FormField {
+  key?: string
+  type: 'text' | 'textarea' | 'select' | 'number' | 'date' | 'phone' | 'email'
+  label?: string
+  required?: boolean
+  options?: string[] | FormFieldOption[]
+  placeholder?: string
+}
+
+export interface SiteForm {
+  id: number
+  name?: string
+  status?: 'open' | 'closed'
+  formSchema?: string
+  startAt?: string
+  endAt?: string
+  loginRequired?: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface FormSubmission {
+  id: number
+  formId?: number
+  submitterName?: string
+  data?: Record<string, unknown>
+  formData?: Record<string, unknown>
+  createdAt?: string
+}
+
+// Get a unified form title from the API's `name` field.
+export function formTitle(form: SiteForm): string {
+  return form.name || '未命名表单'
+}
+
+// Get a unified field list regardless of whether the API used `fields` or `formSchema` (JSON string).
+export function formFields(form: SiteForm): FormField[] {
+  if (form.formSchema) {
+    try {
+      const parsed = JSON.parse(form.formSchema)
+      if (Array.isArray(parsed)) return parsed as FormField[]
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+// Get a field's display label (uses `label`, falls back to `name` or `key`).
+export function fieldLabel(field: FormField): string {
+  return field.label || field.key || '未命名字段'
+}
+
+// Normalize a field's options to string labels.
+export function fieldOptions(field: FormField): string[] {
+  if (!field.options) return []
+  if (typeof field.options[0] === 'string') return field.options as string[]
+  return (field.options as FormFieldOption[]).map((o) => o.label || o.value)
+}
+
+// Serialize a fields array back into the `formSchema` JSON string the API expects.
+function serializeFormSchema(fields: FormField[]): string {
+  return JSON.stringify(fields.map((f) => ({
+    key: f.key || f.label || '',
+    type: f.type,
+    label: f.label || f.key || '',
+    required: Boolean(f.required),
+    placeholder: f.placeholder || '',
+    options: Array.isArray(f.options) && typeof f.options[0] === 'object'
+      ? f.options
+      : Array.isArray(f.options) ? f.options.map((label) => ({ label, value: label })) : undefined,
+  })))
+}
+
+export async function getForms(clubId = 1): Promise<SiteForm[] | null> {
+  const raw = await managementRequest<unknown>({
+    method: 'GET',
+    url: `/management/clubs/${clubId}/site-forms`,
+  })
+  if (Array.isArray(raw)) return raw as SiteForm[]
+  if (raw && Array.isArray((raw as PageData<SiteForm>).list)) return (raw as PageData<SiteForm>).list
+  return null
+}
+
+export async function getForm(formId: number): Promise<SiteForm | null> {
+  return managementRequest<SiteForm>({ method: 'GET', url: `/management/site-forms/${formId}` })
+}
+
+export async function createForm(data: {
+  name: string
+  fields: FormField[]
+  status?: string
+  startAt?: string
+  endAt?: string
+}, clubId = 1): Promise<SiteForm | null> {
+  return managementRequest<SiteForm>({
+    method: 'POST',
+    url: `/management/clubs/${clubId}/site-forms`,
+    data: {
+      name: data.name,
+      formSchema: serializeFormSchema(data.fields),
+      status: data.status || 'open',
+      startAt: data.startAt,
+      endAt: data.endAt,
+    },
+  })
+}
+
+export async function updateForm(formId: number, data: Partial<SiteForm> & { fields?: FormField[] }): Promise<SiteForm | null> {
+  const payload: Record<string, unknown> = { ...data }
+  if (data.fields) payload.formSchema = serializeFormSchema(data.fields)
+  delete payload.fields
+  return managementRequest<SiteForm>({ method: 'PATCH', url: `/management/site-forms/${formId}`, data: payload })
+}
+
+export async function publishForm(formId: number): Promise<SiteForm | null> {
+  return managementRequest<SiteForm>({ method: 'POST', url: `/management/site-forms/${formId}/publish` })
+}
+
+export async function closeForm(formId: number): Promise<SiteForm | null> {
+  return managementRequest<SiteForm>({ method: 'POST', url: `/management/site-forms/${formId}/close` })
+}
+
+export async function getFormSubmissions(formId: number, params?: {
+  page?: number
+  pageSize?: number
+}): Promise<PageData<FormSubmission> | null> {
+  const raw = await managementRequest<unknown>({
+    method: 'GET',
+    url: `/management/site-forms/${formId}/submissions`,
+    params,
+  })
+  return normalizePage<FormSubmission>(raw)
+}
+
+export async function submitForm(formId: number, data: Record<string, unknown>): Promise<FormSubmission | null> {
+  return managementRequest<FormSubmission>({
+    method: 'POST',
+    url: `/management/forms/${formId}/submissions`,
+    data,
+  })
+}
+
+export async function exportFormSubmissions(formId: number): Promise<Blob> {
+  const response = await apiClient.get(`/management/site-forms/${formId}/submissions/export`, {
+    responseType: 'blob',
+  })
+  return response.data
+}

@@ -36,13 +36,24 @@ public class RagService {
   private static final String OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
   private static final ExecutorService STREAM_EXECUTOR = Executors.newCachedThreadPool();
 
-  private static final String SYSTEM_PROMPT = "你是 OpenAtom 社团知识助手。只根据给定资料回答，使用中文，并用 [编号] 标注引用。资料不足时明确说明。请使用标准 Markdown 格式输出：标题后必须有空格（如 ### 标题），列表项前有空行，标记后有空格（如 - 项目），段落之间用空行分隔。";
+  private static final String SYSTEM_PROMPT = "你是 OpenAtom 社团知识助手。根据给定资料回答，使用中文，并用 [编号] 标注引用。资料可能来自本地知识库或网络搜索，网络来源请标注链接。如果资料不足以回答问题，明确说明并建议补充哪些资料。请使用标准 Markdown 格式输出：标题后必须有空格（如 ### 标题），列表项前有空行，标记后有空格（如 - 项目），段落之间用空行分隔。";
 
   private final SearchIndexService searchIndexService;
   private final KnowledgeFileRepository fileRepository;
   private final AppProperties properties;
   private final HttpClient httpClient;
   private final ObjectMapper objectMapper;
+  private final WebSearchService webSearchService;
+  private final ManagementProxyService managementProxyService;
+
+  private static final Set<String> FORM_KEYWORDS = Set.of(
+      "表单", "报名表", "问卷", "填写", "提交表单", "form", "表单系统", "提交记录", "报名情况");
+
+  private boolean isFormRelated(String question) {
+    if (question == null) return false;
+    String lower = question.toLowerCase();
+    return FORM_KEYWORDS.stream().anyMatch(kw -> lower.contains(kw.toLowerCase()));
+  }
 
   public RagDtos.ChatResponse chat(RagDtos.ChatRequest request) {
     List<RagDtos.SearchResult> results = searchIndexService.search(request.question()).stream().limit(6).toList();
@@ -88,15 +99,42 @@ public class RagService {
         })
         .toList();
 
+    // Web search: supplement local results when they are insufficient
+    List<WebSearchService.WebResult> webResults = List.of();
+    if (webSearchService.isEnabled() && sources.size() < 3) {
+      log.info("Local results insufficient ({}), supplementing with web search", sources.size());
+      webResults = webSearchService.search(request.question());
+    }
+
+    // Build combined sources list (local + web)
+    List<RagDtos.Source> allSources = new ArrayList<>(sources);
+    long webIdCounter = 90000L;
+    for (WebSearchService.WebResult wr : webResults) {
+      allSources.add(new RagDtos.Source(
+          webIdCounter++,
+          wr.title(),
+          wr.title(),
+          wr.snippet(),
+          60,
+          "网络搜索",
+          wr.url(),
+          "Web",
+          "",
+          0,
+          "url"));
+    }
+    final List<RagDtos.Source> finalAllSources = allSources;
+    final List<WebSearchService.WebResult> finalWebResults = webResults;
+
     STREAM_EXECUTOR.submit(() -> {
       try {
-        emitter.send(SseEmitter.event().name("sources").data(sources));
+        emitter.send(SseEmitter.event().name("sources").data(finalAllSources));
         String provider = properties.ai().provider() == null ? "" : properties.ai().provider().toLowerCase();
         String apiKey = properties.ai().apiKey();
         if (LLM_PROVIDERS.contains(provider) && apiKey != null && !apiKey.isBlank()) {
-          streamFromLLM(request.question(), sources, emitter, provider);
+          streamFromLLM(request.question(), request.history(), finalAllSources, emitter, provider);
         } else {
-          streamMockAnswer(request.question(), sources, emitter);
+          streamMockAnswer(request.question(), finalAllSources, emitter);
         }
         emitter.send(SseEmitter.event().name("done").data("[DONE]"));
         emitter.complete();
@@ -109,9 +147,31 @@ public class RagService {
     return emitter;
   }
 
+  /**
+   * When the question is form-related, fetch live form/submission data from the external
+   * management system and return it as an extra context block for the LLM.
+   */
+  private String extraSystemContext(String question) {
+    if (!isFormRelated(question)) return "";
+    try {
+      String formData = managementProxyService.fetchFormsContextForAi();
+      if (formData != null && !formData.isBlank()) {
+        return "\n\n# 表单系统实时数据（来自社团管理系统）\n" + formData;
+      }
+    } catch (Exception e) {
+      log.warn("Failed to fetch form context for AI: {}", e.getMessage());
+    }
+    return "";
+  }
+
   private String buildContext(List<RagDtos.Source> sources) {
     return sources.stream()
         .map(source -> {
+          // For web sources (id >= 90000), use snippet directly
+          if (source.id() >= 90000L) {
+            String snippet = source.excerpt() != null ? source.excerpt() : "";
+            return "[" + source.id() + "] " + source.title() + " (网络来源: " + source.path() + ")\n" + snippet;
+          }
           KnowledgeFile file = fileRepository.findById(source.id()).orElse(null);
           String content = file != null ? file.getExtractedText() : source.excerpt();
           if (content != null && content.length() > 8000) content = content.substring(0, 8000);
@@ -120,17 +180,29 @@ public class RagService {
         .collect(java.util.stream.Collectors.joining("\n\n"));
   }
 
-  private void streamFromLLM(String question, List<RagDtos.Source> sources, SseEmitter emitter, String provider) throws Exception {
+  private void streamFromLLM(String question, List<RagDtos.ChatMessage> history, List<RagDtos.Source> sources, SseEmitter emitter, String provider) throws Exception {
     String baseUrl = resolveBaseUrl(provider);
     String model = resolveModel(provider);
     String context = buildContext(sources);
+    String extra = extraSystemContext(question);
+    // Build messages: system prompt + conversation history + current question with context
+    List<Map<String, Object>> messages = new ArrayList<>();
+    messages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
+    // Include previous conversation turns (up to 10 messages to limit token usage)
+    if (history != null) {
+      int start = Math.max(0, history.size() - 10);
+      for (RagDtos.ChatMessage msg : history.subList(start, history.size())) {
+        if (msg.content() != null && !msg.content().isBlank()) {
+          messages.add(Map.of("role", msg.role(), "content", stripImages(msg.content())));
+        }
+      }
+    }
+    messages.add(Map.of("role", "user", "content", "问题：" + stripImages(question) + "\n\n资料：\n" + context + extra));
     Map<String, Object> body = Map.of(
         "model", model,
         "temperature", 0.2,
         "stream", true,
-        "messages", List.of(
-            Map.of("role", "system", "content", SYSTEM_PROMPT),
-            Map.of("role", "user", "content", "问题：" + stripImages(question) + "\n\n资料：\n" + context)));
+        "messages", messages);
     HttpRequest httpRequest = HttpRequest.newBuilder()
         .uri(URI.create(baseUrl.replaceAll("/+$", "") + "/chat/completions"))
         .timeout(Duration.ofSeconds(120))
@@ -365,12 +437,13 @@ public class RagService {
     String model = resolveModel(provider);
     try {
       String context = buildContext(sources);
+      String extra = extraSystemContext(question);
       Map<String, Object> body = Map.of(
           "model", model,
           "temperature", 0.2,
           "messages", List.of(
               Map.of("role", "system", "content", SYSTEM_PROMPT),
-              Map.of("role", "user", "content", "问题：" + stripImages(question) + "\n\n资料：\n" + context)));
+              Map.of("role", "user", "content", "问题：" + stripImages(question) + "\n\n资料：\n" + context + extra)));
     HttpRequest httpRequest = HttpRequest.newBuilder()
         .uri(URI.create(baseUrl.replaceAll("/+$", "") + "/chat/completions"))
         .timeout(Duration.ofSeconds(60))
