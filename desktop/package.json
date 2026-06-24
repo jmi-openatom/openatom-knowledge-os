@@ -1,6 +1,6 @@
 {
   "name": "@openatom/desktop",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "private": true,
   "description": "OpenAtom Knowledge OS Electron desktop client",
   "author": "JMI OpenAtom",
