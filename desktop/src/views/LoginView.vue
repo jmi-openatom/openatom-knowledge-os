@@ -43,11 +43,13 @@ function demo() {
       <p>将通过系统浏览器打开统一认证中心，并使用 PKCE 安全完成授权。</p>
       <OaButton tone="primary" size="lg" block :loading="auth.loading" @click="login">
         <template #prefix><IconBrandOauth :size="19" /></template>
-        使用 JMI-OPENATOM 统一登录
+        {{ auth.loading ? '正在等待浏览器完成授权…' : '使用 JMI-OPENATOM 统一登录' }}
       </OaButton>
-<!--      <button class="demo-link" type="button" @click="demo">进入本地演示模式</button>-->
 
-      <p v-if="auth.error" class="login-error">{{ auth.error }}</p>
+      <p v-if="auth.error" class="login-error">
+        {{ auth.error }}
+        <br><button class="login-retry" type="button" @click="login">点击重试</button>
+      </p>
       <br><br>
       <small>继续即表示你同意组织的数据与权限管理规范。</small>
     </OaPanel>
@@ -69,7 +71,9 @@ function demo() {
 .login-card__eyebrow { font-family: var(--oa-font-mono); font-size: 10px; letter-spacing: .8px; }
 .demo-link { display: block; margin: 15px auto; border: 0; color: var(--oa-color-link); background: transparent; cursor: pointer; font-size: 12px; }
 .login-card small { display: block; color: var(--oa-color-muted); font-size: 10px; text-align: center; }
-.login-error { padding: 9px; border-radius: 6px; color: var(--oa-color-danger) !important; background: var(--oa-color-danger-soft); font-size: 11px; }
+.login-error { padding: 9px; border-radius: 6px; color: var(--oa-color-danger) !important; background: var(--oa-color-danger-soft); font-size: 11px; line-height: 1.6; }
+.login-retry { margin-top: 6px; padding: 4px 12px; border: 1px solid var(--oa-color-danger); border-radius: 4px; color: var(--oa-color-danger); background: transparent; cursor: pointer; font-size: 11px; }
+.login-retry:hover { background: var(--oa-color-danger-soft); }
 @media (max-width: 900px) {
   .login-view { grid-template-columns: 1fr; align-content: center; padding: 48px 24px; }
   .login-copy { display: none; }

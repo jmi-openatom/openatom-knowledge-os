@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed} from 'vue'
+import {computed, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {
   IconAtom2,
@@ -10,10 +10,13 @@ import {
   IconFileText,
   IconFolders,
   IconMessageCircle,
+  IconMinus,
   IconSearch,
   IconSettings,
   IconShieldCog,
+  IconSquare,
   IconUsers,
+  IconX,
 } from '@tabler/icons-vue'
 import {OaAvatar, OaGlassSidebar, OaNavItem, OaToastViewport} from '@openatom/ui'
 import {useAuthStore} from '@/stores/auth'
@@ -22,6 +25,9 @@ import FilePreviewer from '@/components/FilePreviewer.vue'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+
+const isMaximized = ref(false)
+const isWindows = window.openatom?.platform === 'win32'
 
 const items = computed(() => [
   {path: '/chat', label: '对话', icon: IconMessageCircle},
@@ -43,13 +49,33 @@ function handleNavClick(item: { path: string }) {
     router.push(item.path)
   }
 }
+
+function winMinimize() {
+  window.openatom?.windowControl.minimize()
+}
+async function winMaximize() {
+  await window.openatom?.windowControl.maximize()
+  isMaximized.value = await window.openatom?.windowControl.isMaximized() ?? false
+}
+function winClose() {
+  window.openatom?.windowControl.close()
+}
 </script>
 
 <template>
-  <div class="top-header">
-    JMI-OPENATOM
-  </div>
-  <div class="app-shell">
+  <div class="app-root">
+    <div v-if="isWindows" class="top-header">
+      <span class="top-header__title">JMI-OPENATOM</span>
+      <div class="window-controls">
+        <button class="win-btn" @click="winMinimize" title="最小化"><IconMinus :size="14" /></button>
+        <button class="win-btn" @click="winMaximize" :title="isMaximized ? '还原' : '最大化'">
+          <IconSquare :size="12" v-if="!isMaximized" />
+          <IconSquare :size="14" v-else style="stroke-width: 1" />
+        </button>
+        <button class="win-btn win-btn--close" @click="winClose" title="关闭"><IconX :size="14" /></button>
+      </div>
+    </div>
+    <div class="app-shell">
 
     <!-- Header bar for window dragging -->
     <div class="app-headerbar" data-tauri-drag-region></div>
@@ -92,15 +118,23 @@ function handleNavClick(item: { path: string }) {
     </main>
     <FilePreviewer/>
     <OaToastViewport/>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
 .app-shell {
   display: flex;
-  width: 100vw;
-  height: 97vh;
+  flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   background: var(--oa-color-canvas-soft);
 }
@@ -124,6 +158,40 @@ function handleNavClick(item: { path: string }) {
   justify-content: center;
   font-size: 13px;
   font-weight: 500;
+  -webkit-app-region: drag;
+  position: relative;
+  flex-shrink: 0;
+}
+.top-header__title {
+  flex: 1;
+  text-align: center;
+  pointer-events: none;
+}
+.window-controls {
+  display: flex;
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+.win-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+  transition: background .12s;
+}
+.win-btn:hover {
+  background: rgba(0,0,0,.06);
+}
+.win-btn--close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
 .app-shell__main {

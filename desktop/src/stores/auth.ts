@@ -52,9 +52,19 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = ''
     try {
       if (!window.openatom) {
-        throw new Error('浏览器预览不支持系统 OAuth 回调，请使用演示登录或 Electron 客户端。')
+        throw new Error('当前环境不支持 OAuth 登录，请使用 Electron 客户端。')
       }
-      const session = await window.openatom.auth.login()
+      console.log('[Auth] 开始登录流程...')
+      // auth:login IPC always resets pending state, so each call starts fresh
+      const loginPromise = window.openatom.auth.login()
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          window.openatom?.auth.loginReset?.()
+          reject(new Error('登录超时：未在浏览器中完成授权。请检查浏览器是否已打开认证页面，或点击重试。'))
+        }, 60_000)
+      })
+      const session = await Promise.race([loginPromise, timeoutPromise])
+      console.log('[Auth] 登录成功，用户信息:', session.user?.name)
       const normalized = normalizeUser(session.user)
       if (normalized.role !== 'admin') {
         await rejectNonAdmin()
@@ -62,6 +72,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
       user.value = normalized
     } catch (reason) {
+      console.error('[Auth] 登录失败:', reason)
       error.value = reason instanceof Error ? reason.message : '登录失败'
       throw reason
     } finally {

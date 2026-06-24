@@ -200,13 +200,21 @@ function clearSession() {
 }
 
 async function exchangeToken(params) {
-  const response = await fetch(`${issuer}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params),
-  })
+  console.log('[OAuth] 正在请求令牌:', `${issuer}/oauth/token`)
+  let response
+  try {
+    response = await fetch(`${issuer}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params),
+    })
+  } catch (networkError) {
+    console.error('[OAuth] 网络请求失败:', networkError)
+    throw new Error(`无法连接 OAuth 服务器 (${issuer})：${networkError.message}`)
+  }
   if (!response.ok) {
     const body = await response.text()
+    console.error('[OAuth] 令牌请求失败:', response.status, body)
     throw new Error(`OAuth 令牌请求失败（${response.status}）：${body || '未知错误'}`)
   }
   const json = await response.json()
@@ -215,10 +223,21 @@ async function exchangeToken(params) {
 }
 
 async function fetchUser(accessToken) {
-  const response = await fetch(`${issuer}/oauth/userinfo`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  if (!response.ok) throw new Error('OAuth 用户信息同步失败')
+  console.log('[OAuth] 正在获取用户信息...')
+  let response
+  try {
+    response = await fetch(`${issuer}/oauth/userinfo`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  } catch (networkError) {
+    console.error('[OAuth] 获取用户信息失败:', networkError)
+    throw new Error(`无法连接 OAuth 用户信息接口：${networkError.message}`)
+  }
+  if (!response.ok) {
+    const body = await response.text()
+    console.error('[OAuth] 用户信息请求失败:', response.status, body)
+    throw new Error(`OAuth 用户信息同步失败（${response.status}）`)
+  }
   const json = await response.json()
   // OAuth server wraps response in a "data" field
   return json.data || json
@@ -233,9 +252,24 @@ async function startPkceLogin() {
     const state = base64Url(crypto.randomBytes(24))
     const nonce = base64Url(crypto.randomBytes(24))
 
+    let resolved = false
+
     const server = http.createServer(async (request, response) => {
+      const reqUrl = request.url || '/'
+      console.log(`[OAuth] 收到请求: ${request.method} ${reqUrl} from ${request.socket.remoteAddress}`)
+
+      // Add CORS headers for all responses (helps with cross-origin redirects on Windows)
+      response.setHeader('Access-Control-Allow-Origin', '*')
+      response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      response.setHeader('Access-Control-Allow-Headers', '*')
+      if (request.method === 'OPTIONS') {
+        response.writeHead(204)
+        response.end()
+        return
+      }
+
       try {
-        const url = new URL(request.url || '/', redirectUri)
+        const url = new URL(reqUrl, redirectUri)
         
         // 处理 /login 路径：重定向到 OAuth 服务器的登录页面
         if (url.pathname === '/login') {
@@ -246,14 +280,15 @@ async function startPkceLogin() {
           return
         }
         
-        // 只处理 OAuth 回调路径，其他请求不响应（让浏览器等待或超时）
+        // 只处理 OAuth 回调路径
         if (url.pathname !== '/auth/callback') {
-          console.log('[OAuth] 收到非回调请求:', url.pathname, '- 忽略此请求')
-          // 不返回任何内容，让浏览器继续等待 OAuth 服务器的响应
+          console.log('[OAuth] 非回调请求:', url.pathname, '- 忽略')
+          response.writeHead(404, { 'Content-Type': 'text/plain' })
+          response.end('Not found')
           return
         }
         
-        console.log('[OAuth] 收到回调请求，查询参数:', url.search)
+        console.log('[OAuth] ✅ 收到回调请求，查询参数:', url.search)
         if (url.searchParams.get('state') !== state) {
           throw new Error('OAuth state 校验失败，请重新登录')
         }
@@ -262,6 +297,7 @@ async function startPkceLogin() {
         const code = url.searchParams.get('code')
         if (!code) throw new Error('OAuth 回调缺少授权码')
 
+        console.log('[OAuth] 收到授权码，正在交换令牌...')
         const tokens = await exchangeToken({
           grant_type: 'authorization_code',
           client_id: clientId,
@@ -269,9 +305,9 @@ async function startPkceLogin() {
           redirect_uri: redirectUri,
           code_verifier: codeVerifier,
         })
+        console.log('[OAuth] ✅ 令牌交换成功')
         const user = tokens.user || await fetchUser(tokens.access_token)
-        console.log('[OAuth] Token response keys:', Object.keys(tokens))
-        console.log('[OAuth] User info from OAuth:', JSON.stringify(user, null, 2))
+        console.log('[OAuth] ✅ 用户信息获取成功:', user?.name || user?.id)
         const session = {
           ...tokens,
           user,
@@ -281,13 +317,19 @@ async function startPkceLogin() {
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         response.end('<!doctype html><meta charset="utf-8"><title>登录成功</title><style>body{font-family:system-ui;padding:48px;text-align:center}h1{font-size:24px}</style><h1>登录成功</h1><p>可以关闭此窗口并返回 OpenAtom Knowledge OS。</p>')
         server.close()
-        mainWindow?.show()
-        mainWindow?.focus()
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+        resolved = true
         resolve({ user, expiresIn: tokens.expires_in })
       } catch (error) {
+        console.error('[OAuth] ❌ 登录失败:', error)
+        const msg = error instanceof Error ? error.message : '登录失败'
         response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
-        response.end(error instanceof Error ? error.message : '登录失败')
+        response.end(msg)
         server.close()
+        resolved = true
         reject(error)
       } finally {
         pendingLogin = null
@@ -295,11 +337,19 @@ async function startPkceLogin() {
     })
 
     server.on('error', (error) => {
-      pendingLogin = null
-      reject(new Error(`无法启动 OAuth 回调监听端口 ${callbackPort}：${error.message}`))
+      console.error('[OAuth] ❌ 服务器错误:', error)
+      if (!resolved) {
+        pendingLogin = null
+        reject(new Error(`无法启动 OAuth 回调监听端口 ${callbackPort}：${error.message}`))
+      }
     })
 
-    server.listen(callbackPort, '127.0.0.1', async () => {
+    // Listen on all interfaces (both IPv4 and IPv6) for maximum compatibility
+    // This fixes Windows where localhost may resolve to ::1 (IPv6)
+    server.listen(callbackPort, '::', async () => {
+      const addr = server.address()
+      console.log(`[OAuth] 回调服务器已启动，监听: ${JSON.stringify(addr)}`)
+
       const params = new URLSearchParams({
         response_type: 'code',
         client_id: clientId,
@@ -312,38 +362,34 @@ async function startPkceLogin() {
       })
       const authUrl = `${issuer}/oauth/authorize?${params}`
       console.log('[OAuth] 授权 URL:', authUrl)
-      console.log('[OAuth] 正在使用系统浏览器打开授权页面...')
+      console.log('[OAuth] 正在打开系统浏览器...')
       
-      // 使用 macOS 的 open 命令在默认浏览器中打开
-      if (process.platform === 'darwin') {
-        exec(`open "${authUrl}"`, (error) => {
-          if (error) {
-            console.error('[OAuth] 打开浏览器失败:', error)
-            // 如果 open 命令失败，尝试 shell.openExternal
-            shell.openExternal(authUrl).catch(err => {
-              console.error('[OAuth] shell.openExternal 也失败了:', err)
-              console.log('[OAuth] 请手动复制上面的 URL 并在浏览器中访问')
-            })
-          } else {
-            console.log('[OAuth] 已在默认浏览器中打开授权页面')
-          }
-        })
-      } else {
-        // Windows/Linux 使用 shell.openExternal
-        shell.openExternal(authUrl).catch(err => {
-          console.error('[OAuth] 打开浏览器失败:', err)
-          console.log('[OAuth] 请手动复制上面的 URL 并在浏览器中访问')
-        })
+      try {
+        await shell.openExternal(authUrl)
+        console.log('[OAuth] ✅ 已打开系统浏览器')
+      } catch (err) {
+        console.error('[OAuth] ❌ 打开浏览器失败:', err)
+        // On Windows, try cmd.exe start as fallback
+        if (process.platform === 'win32') {
+          exec(`start "" "${authUrl}"`, (error) => {
+            if (error) {
+              console.error('[OAuth] ❌ cmd start 也失败:', error)
+            } else {
+              console.log('[OAuth] ✅ 已通过 cmd start 打开浏览器')
+            }
+          })
+        }
       }
     })
 
     setTimeout(() => {
-      if (server.listening) {
+      if (!resolved && server.listening) {
+        console.error('[OAuth] ❌ 登录超时（90秒）')
         server.close()
         pendingLogin = null
         reject(new Error('OAuth 登录已超时，请重新尝试'))
       }
-    }, 5 * 60 * 1000)
+    }, 90_000)
   })
 
   return pendingLogin
@@ -370,7 +416,9 @@ function createWindow() {
     minWidth: 1120,
     minHeight: 720,
     show: false,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    frame: isMac ? undefined : false,
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined,
     autoHideMenuBar: true,
     backgroundColor: '#fafafa',
     icon: path.join(__dirname, '..', 'resources', 'icon.png'),
@@ -408,7 +456,34 @@ ipcMain.handle('admin:open', () => {
   createAdminWindow()
 })
 
-ipcMain.handle('auth:login', startPkceLogin)
+// Window control IPC handlers
+ipcMain.handle('window:minimize', () => {
+  mainWindow?.minimize()
+})
+ipcMain.handle('window:maximize', () => {
+  if (mainWindow?.isMaximized()) {
+    mainWindow.unmaximize()
+  } else {
+    mainWindow?.maximize()
+  }
+})
+ipcMain.handle('window:isMaximized', () => {
+  return mainWindow?.isMaximized() ?? false
+})
+ipcMain.handle('window:close', () => {
+  mainWindow?.close()
+})
+
+ipcMain.handle('auth:login', () => {
+  // Always reset pending state so a fresh login attempt starts
+  pendingLogin = null
+  return startPkceLogin()
+})
+ipcMain.handle('auth:login-reset', () => {
+  pendingLogin = null
+  console.log('[OAuth] 登录状态已重置，可重新尝试')
+  return true
+})
 ipcMain.handle('auth:logout', () => {
   clearSession()
   return true

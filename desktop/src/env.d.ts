@@ -28,6 +28,7 @@ interface Window {
     }
     auth: {
       login: () => Promise<{ user: OpenAtomUser; expiresIn: number }>
+      loginReset: () => Promise<boolean>
       logout: () => Promise<boolean>
       getSession: () => Promise<{ user: OpenAtomUser; expiresIn: number; obtainedAt: number } | null>
       getAccessToken: () => Promise<string | null>
@@ -44,6 +45,12 @@ interface Window {
     }
     admin: {
       open: () => Promise<void>
+    }
+    windowControl: {
+      minimize: () => Promise<void>
+      maximize: () => Promise<void>
+      isMaximized: () => Promise<boolean>
+      close: () => Promise<void>
     }
   }
 }

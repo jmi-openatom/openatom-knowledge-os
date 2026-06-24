@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('openatom', {
   },
   auth: {
     login: () => ipcRenderer.invoke('auth:login'),
+    loginReset: () => ipcRenderer.invoke('auth:login-reset'),
     logout: () => ipcRenderer.invoke('auth:logout'),
     getSession: () => ipcRenderer.invoke('auth:get-session'),
     getAccessToken: () => ipcRenderer.invoke('auth:get-access-token'),
@@ -22,6 +23,12 @@ contextBridge.exposeInMainWorld('openatom', {
   },
   admin: {
     open: () => ipcRenderer.invoke('admin:open'),
+  },
+  windowControl: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+    close: () => ipcRenderer.invoke('window:close'),
   },
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
